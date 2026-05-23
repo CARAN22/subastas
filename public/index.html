@@ -84,23 +84,50 @@
         #links-panel {
             position: fixed;
             bottom: 20px;
-            left: 20px;
-            background: #000;
-            padding: 15px;
-            border: 1px solid #444;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.95);
+            padding: 18px;
+            border: 2px solid var(--neon-color);
             border-radius: 10px;
-            font-size: 0.8rem;
+            width: 280px;
+            box-shadow: 0 0 24px rgba(0,0,0,0.9);
         }
 
-        #extra-links-panel {
-            position: fixed;
-            bottom: 20px;
-            left: 275px;
-            background: #000;
-            padding: 15px;
-            border: 1px solid #444;
-            border-radius: 10px;
-            font-size: 0.8rem;
+        #links-panel h3 {
+            margin: 0 0 12px;
+            font-size: 0.95rem;
+            text-transform: uppercase;
+        }
+
+        .page-link {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            width: 100%;
+            min-height: 42px;
+            margin-top: 8px;
+            padding: 10px 12px;
+            box-sizing: border-box;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.22);
+            background: #151515;
+            color: #fff;
+            text-decoration: none;
+            font-size: 0.85rem;
+            font-weight: 800;
+        }
+
+        .page-link:hover {
+            border-color: var(--neon-color);
+            box-shadow: 0 0 14px var(--neon-glow);
+        }
+
+        .page-link code {
+            color: var(--coin-gold);
+            font-size: 0.72rem;
+            font-weight: 700;
+            white-space: nowrap;
         }
     </style>
 </head>
@@ -167,21 +194,33 @@
         <div id="participants-container"></div>
     </div>
 
-        <div id="links-panel">
-            <b>LINKS PARA OBS (Transparente):</b><br>
-            • Modo Eliminación: <code id="obs-link">/overlay.html</code><br>
-            • Modo Clásico: <code id="obs-link-classic">/auction.html</code>
-        </div>
-
-            <div id="extra-links-panel">
-                â€¢ Likes: <code>/likes.html</code><br>
-                â€¢ Top donadores: <code>/donors.html</code>
-            </div>
+    <nav id="links-panel" aria-label="Paginas y overlays">
+        <h3>Entrar a paginas</h3>
+        <a class="page-link" href="/overlay.html" target="_blank" rel="noopener">
+            <span>Overlay eliminacion</span>
+            <code>/overlay.html</code>
+        </a>
+        <a class="page-link" href="/auction.html" target="_blank" rel="noopener">
+            <span>Overlay clasico</span>
+            <code>/auction.html</code>
+        </a>
+        <a class="page-link" href="/classic.html" target="_blank" rel="noopener">
+            <span>Subasta clasica</span>
+            <code>/classic.html</code>
+        </a>
+        <a class="page-link" href="/likes.html" target="_blank" rel="noopener">
+            <span>Likes</span>
+            <code>/likes.html</code>
+        </a>
+        <a class="page-link" href="/donors.html" target="_blank" rel="noopener">
+            <span>Top donadores</span>
+            <code>/donors.html</code>
+        </a>
+    </nav>
 
     <script>
         const socket = io();
         document.getElementById('classic-settings').innerHTML = '<label>SEG. EXTRA POR MONEDA:</label><input type="number" id="extra-time" value="1">';
-        document.getElementById('extra-links-panel').innerHTML = 'Likes: <code>/likes.html</code><br>Top donadores: <code>/donors.html</code>';
         let participants = [];
         let timeLeft = 0;
         let initTimeConfig = 60;
