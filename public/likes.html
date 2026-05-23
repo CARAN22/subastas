@@ -190,6 +190,11 @@
             totalLikes.textContent = '0';
             renderLikes({});
         });
+
+        socket.on('clear-likes-broadcast', () => {
+            totalLikes.textContent = '0';
+            renderLikes({});
+        });
     </script>
 </body>
 </html>

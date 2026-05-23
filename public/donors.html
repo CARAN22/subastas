@@ -226,6 +226,10 @@
         socket.on('clear-all-broadcast', () => {
             renderDonors({});
         });
+
+        socket.on('clear-donors-broadcast', () => {
+            renderDonors({});
+        });
     </script>
 </body>
 </html>

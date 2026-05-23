@@ -176,6 +176,8 @@
         
         <button id="start-manual-btn" class="main-btn" style="background: #4caf50;">INICIAR CRONÓMETRO</button>
         <button id="clear-btn" class="main-btn" style="background: #cc0000;">LIMPIAR TODO</button>
+        <button id="clear-donors-btn" class="main-btn" style="background: #7c4dff;">LIMPIAR TOP DONADORES</button>
+        <button id="clear-likes-btn" class="main-btn" style="background: #ff0050;">LIMPIAR TOP LIKES</button>
         <button id="test-btn" class="main-btn" style="background: #333;">AÑADIR TEST</button>
         <button id="test-donor-btn" class="main-btn" style="background: #7c4dff;">TEST DONACION</button>
         <button id="test-like-btn" class="main-btn" style="background: #ff0050;">TEST LIKES</button>
@@ -300,6 +302,14 @@
 
         document.getElementById('clear-btn').addEventListener('click', () => {
             socket.emit('admin-clear-all');
+        });
+
+        document.getElementById('clear-donors-btn').addEventListener('click', () => {
+            socket.emit('admin-clear-donors');
+        });
+
+        document.getElementById('clear-likes-btn').addEventListener('click', () => {
+            socket.emit('admin-clear-likes');
         });
 
         document.getElementById('test-btn').addEventListener('click', () => {

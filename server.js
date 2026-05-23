@@ -184,6 +184,24 @@ io.on('connection', (socket) => {
         io.emit('clear-all-broadcast');
     });
 
+    socket.on('admin-clear-donors', () => {
+        auctionState.classicParticipants = {};
+        io.emit('clear-donors-broadcast');
+        io.emit('classic-update', {
+            participants: auctionState.classicParticipants
+        });
+    });
+
+    socket.on('admin-clear-likes', () => {
+        auctionState.likeParticipants = {};
+        auctionState.totalLikes = 0;
+        io.emit('clear-likes-broadcast');
+        io.emit('likes-update', {
+            participants: auctionState.likeParticipants,
+            totalLikes: auctionState.totalLikes
+        });
+    });
+
     socket.on('admin-change-theme', (color) => {
         auctionState.themeColor = color;
         io.emit('change-theme-broadcast', color);
