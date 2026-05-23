@@ -80,13 +80,6 @@
             border: 1px solid rgba(255, 215, 0, 0.72);
             background: rgba(42, 42, 42, 0.82);
             box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
-            transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
-        }
-
-        .donor-card.highlight {
-            transform: scale(1.05);
-            border-color: #fff;
-            box-shadow: 0 0 16px #fff;
         }
 
         .rank {
@@ -157,68 +150,6 @@
             padding: 46px 0 30px;
         }
 
-        #activity-overlay {
-            position: fixed;
-            inset: 0;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            background: rgba(0, 0, 0, 0.74);
-            backdrop-filter: blur(10px);
-            z-index: 20;
-        }
-
-        #activity-overlay.active {
-            display: flex;
-        }
-
-        .activity-card {
-            width: 390px;
-            min-height: 310px;
-            border: 5px solid var(--coin-gold);
-            border-radius: 20px;
-            background: #050505;
-            box-shadow: 0 0 58px var(--coin-gold);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 16px;
-            animation: pop 0.35s ease both;
-        }
-
-        .activity-card img {
-            width: 128px;
-            height: 128px;
-            border-radius: 50%;
-            border: 5px solid #fff;
-            object-fit: cover;
-            background: #222;
-        }
-
-        .activity-name {
-            width: 85%;
-            text-align: center;
-            font-size: 1.5rem;
-            font-weight: 900;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .activity-coins {
-            font-size: 3rem;
-            font-weight: 900;
-            color: var(--coin-gold);
-            text-shadow: 0 0 24px var(--coin-gold);
-            line-height: 1;
-        }
-
-        @keyframes pop {
-            from { opacity: 0; transform: scale(0.7); }
-            to { opacity: 1; transform: scale(1); }
-        }
-
         @media (max-width: 760px) {
             #donors-list {
                 grid-template-columns: 1fr;
@@ -243,25 +174,11 @@
         <div id="empty-state">Esperando donaciones...</div>
     </main>
 
-    <div id="activity-overlay">
-        <div class="activity-card">
-            <img id="activity-avatar" alt="">
-            <div class="activity-name" id="activity-name">Usuario</div>
-            <div class="activity-coins" id="activity-coins">0</div>
-        </div>
-    </div>
-
     <script>
         const socket = io();
         const list = document.getElementById('donors-list');
         const emptyState = document.getElementById('empty-state');
         const topAmount = document.getElementById('top-amount');
-        const activityOverlay = document.getElementById('activity-overlay');
-        const activityAvatar = document.getElementById('activity-avatar');
-        const activityName = document.getElementById('activity-name');
-        const activityCoins = document.getElementById('activity-coins');
-
-        let overlayTimer = null;
 
         function changeTheme(color) {
             document.documentElement.style.setProperty('--neon-color', color);
@@ -275,7 +192,7 @@
             return `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(name || 'Donador')}`;
         }
 
-        function renderDonors(participants, highlightId) {
+        function renderDonors(participants) {
             const sorted = Object.entries(participants || {})
                 .map(([id, data]) => ({ id, ...data }))
                 .sort((a, b) => (b.coins || 0) - (a.coins || 0))
@@ -284,7 +201,7 @@
             emptyState.style.display = sorted.length ? 'none' : 'block';
             topAmount.textContent = sorted.length ? `${sorted[0].coins || 0} monedas` : '0 monedas';
             list.innerHTML = sorted.map((person, index) => `
-                <div class="donor-card ${person.id === highlightId ? 'highlight' : ''}" id="donor-${person.id}">
+                <div class="donor-card" id="donor-${person.id}">
                     <div class="rank">${index + 1}</div>
                     <img class="avatar" src="${person.photo || fallbackAvatar(person.name)}" alt="">
                     <div class="info">
@@ -293,22 +210,6 @@
                     </div>
                 </div>
             `).join('');
-
-            if (highlightId) {
-                setTimeout(() => {
-                    document.getElementById(`donor-${highlightId}`)?.classList.remove('highlight');
-                }, 900);
-            }
-        }
-
-        function showActivity(person) {
-            if (!person) return;
-            clearTimeout(overlayTimer);
-            activityAvatar.src = person.photo || fallbackAvatar(person.name);
-            activityName.textContent = person.name || 'Usuario';
-            activityCoins.textContent = `${person.coins || 0} monedas`;
-            activityOverlay.classList.add('active');
-            overlayTimer = setTimeout(() => activityOverlay.classList.remove('active'), 2200);
         }
 
         socket.on('sync-state', (state) => {
@@ -319,13 +220,11 @@
         socket.on('change-theme-broadcast', changeTheme);
 
         socket.on('classic-update', (data) => {
-            renderDonors(data.participants || {}, data.newDonationId);
-            showActivity(data.participants?.[data.newDonationId]);
+            renderDonors(data.participants || {});
         });
 
         socket.on('clear-all-broadcast', () => {
             renderDonors({});
-            activityOverlay.classList.remove('active');
         });
     </script>
 </body>

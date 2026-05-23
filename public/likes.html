@@ -77,13 +77,6 @@
             border: 2px solid rgba(255, 255, 255, 0.18);
             border-radius: 14px;
             background: rgba(0, 0, 0, 0.62);
-            transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
-        }
-
-        .like-row.highlight {
-            transform: scale(1.05);
-            border-color: #fff;
-            box-shadow: 0 0 28px #fff;
         }
 
         .rank {
@@ -130,67 +123,6 @@
             font-weight: 800;
         }
 
-        #activity-overlay {
-            position: fixed;
-            inset: 0;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            background: rgba(0, 0, 0, 0.72);
-            backdrop-filter: blur(10px);
-            z-index: 20;
-        }
-
-        #activity-overlay.active {
-            display: flex;
-        }
-
-        .activity-card {
-            width: 340px;
-            min-height: 260px;
-            border: 4px solid var(--hot-pink);
-            border-radius: 20px;
-            background: #050505;
-            box-shadow: 0 0 52px var(--hot-pink);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 16px;
-            animation: pop 0.35s ease both;
-        }
-
-        .activity-card img {
-            width: 110px;
-            height: 110px;
-            border-radius: 50%;
-            border: 4px solid #fff;
-            object-fit: cover;
-            background: #222;
-        }
-
-        .activity-name {
-            width: 85%;
-            text-align: center;
-            font-size: 1.35rem;
-            font-weight: 900;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .activity-likes {
-            font-size: 3.5rem;
-            font-weight: 900;
-            color: var(--hot-pink);
-            text-shadow: 0 0 24px var(--hot-pink);
-            line-height: 1;
-        }
-
-        @keyframes pop {
-            from { opacity: 0; transform: scale(0.7); }
-            to { opacity: 1; transform: scale(1); }
-        }
     </style>
 </head>
 <body>
@@ -206,25 +138,11 @@
         <div id="empty-state">Esperando likes...</div>
     </main>
 
-    <div id="activity-overlay">
-        <div class="activity-card">
-            <img id="activity-avatar" alt="">
-            <div class="activity-name" id="activity-name">Usuario</div>
-            <div class="activity-likes" id="activity-likes">+1</div>
-        </div>
-    </div>
-
     <script>
         const socket = io();
         const list = document.getElementById('likes-list');
         const totalLikes = document.getElementById('total-likes');
         const emptyState = document.getElementById('empty-state');
-        const activityOverlay = document.getElementById('activity-overlay');
-        const activityAvatar = document.getElementById('activity-avatar');
-        const activityName = document.getElementById('activity-name');
-        const activityLikes = document.getElementById('activity-likes');
-
-        let overlayTimer = null;
 
         function changeTheme(color) {
             document.documentElement.style.setProperty('--neon-color', color);
@@ -238,7 +156,7 @@
             return `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(name || 'TikTok')}`;
         }
 
-        function renderLikes(participants, highlightId) {
+        function renderLikes(participants) {
             const sorted = Object.entries(participants || {})
                 .map(([id, data]) => ({ id, ...data }))
                 .sort((a, b) => (b.likes || 0) - (a.likes || 0))
@@ -246,29 +164,13 @@
 
             emptyState.style.display = sorted.length ? 'none' : 'block';
             list.innerHTML = sorted.map((person, index) => `
-                <div class="like-row ${person.id === highlightId ? 'highlight' : ''}" id="like-${person.id}">
+                <div class="like-row" id="like-${person.id}">
                     <div class="rank">${index + 1}</div>
                     <img class="avatar" src="${person.photo || fallbackAvatar(person.name)}" alt="">
                     <div class="name">${person.name || person.id}</div>
                     <div class="likes">${person.likes || 0}</div>
                 </div>
             `).join('');
-
-            if (highlightId) {
-                setTimeout(() => {
-                    document.getElementById(`like-${highlightId}`)?.classList.remove('highlight');
-                }, 900);
-            }
-        }
-
-        function showActivity(person, newLikeCount) {
-            if (!person) return;
-            clearTimeout(overlayTimer);
-            activityAvatar.src = person.photo || fallbackAvatar(person.name);
-            activityName.textContent = person.name || 'Usuario';
-            activityLikes.textContent = `+${newLikeCount || 1}`;
-            activityOverlay.classList.add('active');
-            overlayTimer = setTimeout(() => activityOverlay.classList.remove('active'), 1800);
         }
 
         socket.on('sync-state', (state) => {
@@ -281,14 +183,12 @@
 
         socket.on('likes-update', (data) => {
             totalLikes.textContent = data.totalLikes || 0;
-            renderLikes(data.participants || {}, data.newLikeId);
-            showActivity(data.participants?.[data.newLikeId], data.newLikeCount);
+            renderLikes(data.participants || {});
         });
 
         socket.on('clear-all-broadcast', () => {
             totalLikes.textContent = '0';
             renderLikes({});
-            activityOverlay.classList.remove('active');
         });
     </script>
 </body>
