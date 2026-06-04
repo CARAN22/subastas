@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Overlay wins</title>
+    <style>
+        :root {
+            --cyan: #28f4ff;
+            --pink: #ff3ca6;
+            --green: #58ff9a;
+            --gold: #ffd76a;
+            --red: #ff4d6d;
+            --panel: rgba(5, 8, 22, 0.86);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            overflow: hidden;
+            background: transparent;
+            color: #fff;
+            font-family: "Segoe UI", Roboto, Arial, sans-serif;
+        }
+
+        .wins-page {
+            width: 100vw;
+            min-height: 100vh;
+            display: grid;
+            align-items: start;
+            justify-items: center;
+            padding: 18px;
+        }
+
+        .wins-overlay {
+            width: min(520px, calc(100vw - 24px));
+            display: grid;
+            gap: 10px;
+            padding: 14px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.28);
+            background: linear-gradient(135deg, rgba(7, 9, 28, 0.86), rgba(20, 10, 36, 0.74));
+            box-shadow: 0 0 24px rgba(40, 244, 255, 0.2), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(8px);
+        }
+
+        .score {
+            display: flex;
+            align-items: baseline;
+            justify-content: center;
+            gap: 10px;
+            padding: 4px 0 2px;
+        }
+
+        #current-wins {
+            color: var(--green);
+            font-size: clamp(3rem, 10vw, 5.4rem);
+            font-weight: 1000;
+            line-height: 0.9;
+            text-shadow: 0 0 20px rgba(88, 255, 154, 0.46);
+        }
+
+        .goal-text {
+            color: var(--gold);
+            font-size: clamp(1.35rem, 4vw, 2rem);
+            font-weight: 1000;
+            text-shadow: 0 0 14px rgba(255, 215, 106, 0.36);
+        }
+
+        .bar {
+            height: 18px;
+            overflow: hidden;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.24);
+            background: rgba(255, 255, 255, 0.12);
+        }
+
+        #progress-fill {
+            width: 0%;
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, var(--pink), var(--cyan), var(--green));
+            box-shadow: 0 0 18px rgba(40, 244, 255, 0.45);
+            transition: width 180ms ease;
+        }
+
+        .status {
+            min-height: 22px;
+            color: rgba(255, 255, 255, 0.82);
+            font-size: 0.86rem;
+            font-weight: 900;
+            text-align: center;
+            text-transform: uppercase;
+        }
+
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        .controls {
+            position: fixed;
+            left: 16px;
+            bottom: 16px;
+            width: min(330px, calc(100vw - 32px));
+            display: grid;
+            gap: 10px;
+            padding: 14px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.24);
+            background: rgba(0, 0, 0, 0.88);
+            box-shadow: 0 0 24px rgba(0, 0, 0, 0.7);
+        }
+
+        .field {
+            display: grid;
+            gap: 5px;
+        }
+
+        .field label {
+            color: rgba(255, 255, 255, 0.76);
+            font-size: 0.76rem;
+            font-weight: 900;
+            text-transform: uppercase;
+        }
+
+        input {
+            width: 100%;
+            min-height: 38px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            background: #10131f;
+            color: #fff;
+            padding: 8px 10px;
+            font: inherit;
+            font-weight: 800;
+        }
+
+        .button-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        button {
+            min-height: 38px;
+            border: 0;
+            border-radius: 6px;
+            color: #071018;
+            cursor: pointer;
+            font: inherit;
+            font-weight: 1000;
+            text-transform: uppercase;
+        }
+
+        .add {
+            background: var(--green);
+        }
+
+        .subtract {
+            background: var(--red);
+            color: #fff;
+        }
+
+        .reset {
+            background: var(--gold);
+        }
+
+        .hide-control {
+            background: #252b3d;
+            color: #fff;
+        }
+
+        body.clean .controls {
+            display: none;
+        }
+
+        @media (max-width: 620px) {
+            .wins-page {
+                align-items: start;
+                padding: 10px;
+            }
+
+            .controls {
+                left: 10px;
+                bottom: 10px;
+                width: calc(100vw - 20px);
+            }
+        }
+    </style>
+</head>
+<body>
+    <main class="wins-page">
+        <section class="wins-overlay" aria-label="Overlay de wins">
+            <div class="sr-only" id="percent-label">0%</div>
+
+            <div class="score">
+                <span id="current-wins">0</span>
+                <span class="goal-text">/ <span id="goal-wins">50</span> wins</span>
+            </div>
+
+            <div class="bar" aria-hidden="true">
+                <div id="progress-fill"></div>
+            </div>
+
+            <div class="status" id="status-text">Faltan 50 wins</div>
+        </section>
+    </main>
+
+    <aside class="controls" aria-label="Controles del contador de wins">
+        <div class="field">
+            <label for="goal-input">Meta de wins</label>
+            <input id="goal-input" type="number" min="1" value="50">
+        </div>
+
+        <div class="field">
+            <label for="current-input">Wins que llevo</label>
+            <input id="current-input" type="number" value="0">
+        </div>
+
+        <div class="field">
+            <label for="adjust-input">Cambio de wins (+15 o -10)</label>
+            <input id="adjust-input" type="number" value="15">
+        </div>
+
+        <div class="button-row">
+            <button class="add" id="add-btn" type="button">Aplicar</button>
+            <button class="subtract" id="subtract-btn" type="button">Quitar</button>
+        </div>
+
+        <div class="button-row">
+            <button class="reset" id="reset-btn" type="button">Reset</button>
+            <button class="hide-control" id="hide-btn" type="button">Ocultar</button>
+        </div>
+    </aside>
+
+    <script>
+        const storageKey = 'minecraftWinsOverlay';
+        const params = new URLSearchParams(window.location.search);
+        const goalInput = document.getElementById('goal-input');
+        const currentInput = document.getElementById('current-input');
+        const adjustInput = document.getElementById('adjust-input');
+        const currentWins = document.getElementById('current-wins');
+        const goalWins = document.getElementById('goal-wins');
+        const progressFill = document.getElementById('progress-fill');
+        const percentLabel = document.getElementById('percent-label');
+        const statusText = document.getElementById('status-text');
+
+        const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
+        goalInput.value = saved.goal ?? 50;
+        currentInput.value = saved.current ?? 0;
+        adjustInput.value = saved.adjust ?? 15;
+
+        if (params.get('clean') === '1') {
+            document.body.classList.add('clean');
+        }
+
+        function numberFrom(input, fallback) {
+            const value = parseInt(input.value, 10);
+            return Number.isFinite(value) ? value : fallback;
+        }
+
+        function saveState(goal, current, adjust) {
+            localStorage.setItem(storageKey, JSON.stringify({ goal, current, adjust }));
+        }
+
+        function render() {
+            const goal = Math.max(1, numberFrom(goalInput, 50));
+            const current = numberFrom(currentInput, 0);
+            const adjust = numberFrom(adjustInput, 15);
+            const percent = Math.max(0, Math.min(100, Math.round((current / goal) * 100)));
+            const missing = Math.max(0, goal - current);
+
+            goalInput.value = goal;
+            currentInput.value = current;
+            adjustInput.value = adjust;
+            currentWins.textContent = current;
+            goalWins.textContent = goal;
+            progressFill.style.width = `${percent}%`;
+            percentLabel.textContent = `${percent}%`;
+            statusText.textContent = current >= goal ? 'Meta completada' : `Faltan ${missing} wins`;
+            saveState(goal, current, adjust);
+        }
+
+        document.getElementById('add-btn').addEventListener('click', () => {
+            currentInput.value = numberFrom(currentInput, 0) + numberFrom(adjustInput, 0);
+            render();
+        });
+
+        document.getElementById('subtract-btn').addEventListener('click', () => {
+            currentInput.value = numberFrom(currentInput, 0) - Math.abs(numberFrom(adjustInput, 0));
+            render();
+        });
+
+        document.getElementById('reset-btn').addEventListener('click', () => {
+            currentInput.value = 0;
+            render();
+        });
+
+        document.getElementById('hide-btn').addEventListener('click', () => {
+            document.body.classList.toggle('clean');
+        });
+
+        [goalInput, currentInput, adjustInput].forEach((input) => {
+            input.addEventListener('input', render);
+        });
+
+        window.addEventListener('storage', (event) => {
+            if (event.key !== storageKey || !event.newValue) return;
+            const next = JSON.parse(event.newValue);
+            goalInput.value = next.goal ?? 50;
+            currentInput.value = next.current ?? 0;
+            adjustInput.value = next.adjust ?? 15;
+            render();
+        });
+
+        render();
+    </script>
+</body>
+</html>
