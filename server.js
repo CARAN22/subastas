@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 app.use((req, res, next) => {
-    if (req.path === '/wins.html' || req.path.startsWith('/api/wins')) {
+    if (req.path === '/wins.html' || req.path === '/comments.html' || req.path.startsWith('/api/wins') || req.path.startsWith('/api/comments')) {
         res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
         res.set('Pragma', 'no-cache');
         res.set('Expires', '0');
@@ -40,6 +40,7 @@ let auctionState = {
     likeParticipants: {}, // { username: { name, photo, likes } }
     totalLikes: 0,
     wins: { goal: 50, current: 0, adjust: 15 },
+    comments: [],
     extraTimePerCoin: 0 // Cambiado a 0 según pedido (usaremos delay fijo)
 };
 function numberOr(value, fallback) {
@@ -65,6 +66,42 @@ app.post('/api/wins', (req, res) => {
     const wins = setWinsState(req.body || {});
     io.emit('wins-update', wins);
     res.json(wins);
+});
+function pushComment(comment) {
+    const text = String(comment.text || '').trim();
+    if (!text) return null;
+
+    const entry = {
+        id: comment.id || `comment_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        name: String(comment.name || 'Usuario'),
+        uniqueId: String(comment.uniqueId || ''),
+        photo: String(comment.photo || ''),
+        text,
+        timestamp: Date.now()
+    };
+
+    auctionState.comments = [entry, ...(auctionState.comments || [])].slice(0, 25);
+    io.emit('comments-update', {
+        comments: auctionState.comments,
+        newComment: entry
+    });
+    return entry;
+}
+
+app.get('/api/comments', (req, res) => {
+    res.json({ comments: auctionState.comments || [] });
+});
+
+app.post('/api/comments/test', (req, res) => {
+    const entry = pushComment(req.body || {});
+    res.json({ comments: auctionState.comments || [], newComment: entry });
+});
+
+app.post('/api/comments/clear', (req, res) => {
+    auctionState.comments = [];
+    io.emit('comments-clear');
+    io.emit('comments-update', { comments: auctionState.comments });
+    res.json({ comments: auctionState.comments });
 });
 io.on('connection', (socket) => {
     console.log('Cliente conectado');
@@ -187,6 +224,16 @@ io.on('connection', (socket) => {
             });
         });
 
+
+        tiktokConnection.on('chat', (data) => {
+            pushComment({
+                id: data.msgId || data.commentId,
+                name: data.nickname || data.uniqueId || 'Usuario',
+                uniqueId: data.uniqueId || '',
+                photo: data.profilePictureUrl || '',
+                text: data.comment || data.msg || ''
+            });
+        });
         tiktokConnection.on('disconnected', () => {
             auctionState.isConnected = false;
             io.emit('tiktok-disconnected');
@@ -293,6 +340,16 @@ io.on('connection', (socket) => {
 
     socket.on('admin-update-wins', (wins) => {
         io.emit('wins-update', setWinsState(wins || {}));
+    });
+
+    socket.on('admin-add-comment-test', (comment) => {
+        pushComment(comment || {});
+    });
+
+    socket.on('admin-clear-comments', () => {
+        auctionState.comments = [];
+        io.emit('comments-clear');
+        io.emit('comments-update', { comments: auctionState.comments });
     });
 
     socket.on('disconnect', () => {
