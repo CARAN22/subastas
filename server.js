@@ -10,6 +10,15 @@ const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
 
+app.use(express.json());
+app.use((req, res, next) => {
+    if (req.path === '/wins.html' || req.path.startsWith('/api/wins')) {
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.set('Pragma', 'no-cache');
+        res.set('Expires', '0');
+    }
+    next();
+});
 app.use(express.static('public'));
 
 let tiktokConnection = null;
@@ -30,9 +39,33 @@ let auctionState = {
     classicParticipants: {}, // { username: { nickname, photo, coins } }
     likeParticipants: {}, // { username: { name, photo, likes } }
     totalLikes: 0,
+    wins: { goal: 50, current: 0, adjust: 15 },
     extraTimePerCoin: 0 // Cambiado a 0 según pedido (usaremos delay fijo)
 };
+function numberOr(value, fallback) {
+    const parsed = parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
 
+function setWinsState(wins) {
+    const previous = auctionState.wins || { goal: 50, current: 0, adjust: 15 };
+    auctionState.wins = {
+        goal: Math.max(1, numberOr(wins.goal, previous.goal)),
+        current: numberOr(wins.current, previous.current),
+        adjust: numberOr(wins.adjust, previous.adjust)
+    };
+    return auctionState.wins;
+}
+
+app.get('/api/wins', (req, res) => {
+    res.json(auctionState.wins);
+});
+
+app.post('/api/wins', (req, res) => {
+    const wins = setWinsState(req.body || {});
+    io.emit('wins-update', wins);
+    res.json(wins);
+});
 io.on('connection', (socket) => {
     console.log('Cliente conectado');
     
@@ -256,6 +289,10 @@ io.on('connection', (socket) => {
     socket.on('admin-update-min', (min) => {
         auctionState.minCoins = min;
         io.emit('update-min-broadcast', min);
+    });
+
+    socket.on('admin-update-wins', (wins) => {
+        io.emit('wins-update', setWinsState(wins || {}));
     });
 
     socket.on('disconnect', () => {

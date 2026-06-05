@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Overlay wins</title>
+    <script src="/socket.io/socket.io.js"></script>
     <style>
         :root {
             --cyan: #28f4ff;
@@ -135,6 +136,12 @@
             text-transform: uppercase;
         }
 
+        .input-action {
+            display: grid;
+            grid-template-columns: 1fr 92px;
+            gap: 8px;
+        }
+
         input {
             width: 100%;
             min-height: 38px;
@@ -166,6 +173,10 @@
 
         .add {
             background: var(--green);
+        }
+
+        .accept {
+            background: var(--cyan);
         }
 
         .subtract {
@@ -221,12 +232,18 @@
     <aside class="controls" aria-label="Controles del contador de wins">
         <div class="field">
             <label for="goal-input">Meta de wins</label>
-            <input id="goal-input" type="number" min="1" value="50">
+            <div class="input-action">
+                <input id="goal-input" type="number" min="1" value="50">
+                <button class="accept" id="set-goal-btn" type="button">Aceptar</button>
+            </div>
         </div>
 
         <div class="field">
             <label for="current-input">Wins que llevo</label>
-            <input id="current-input" type="number" value="0">
+            <div class="input-action">
+                <input id="current-input" type="number" value="0">
+                <button class="accept" id="set-current-btn" type="button">Aceptar</button>
+            </div>
         </div>
 
         <div class="field">
@@ -235,7 +252,7 @@
         </div>
 
         <div class="button-row">
-            <button class="add" id="add-btn" type="button">Aplicar</button>
+            <button class="add" id="add-btn" type="button">Aplicar cambio</button>
             <button class="subtract" id="subtract-btn" type="button">Quitar</button>
         </div>
 
@@ -246,8 +263,10 @@
     </aside>
 
     <script>
+        const socket = io();
         const storageKey = 'minecraftWinsOverlay';
         const params = new URLSearchParams(window.location.search);
+        const isControl = params.get('control') === '1';
         const goalInput = document.getElementById('goal-input');
         const currentInput = document.getElementById('current-input');
         const adjustInput = document.getElementById('adjust-input');
@@ -257,13 +276,21 @@
         const percentLabel = document.getElementById('percent-label');
         const statusText = document.getElementById('status-text');
 
-        const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
-        goalInput.value = saved.goal ?? 50;
-        currentInput.value = saved.current ?? 0;
-        adjustInput.value = saved.adjust ?? 15;
+        let isApplyingRemote = false;
 
-        if (params.get('clean') === '1') {
+        const saved = readSavedState();
+        applyState(saved, false);
+
+        if (!isControl || params.get('clean') === '1') {
             document.body.classList.add('clean');
+        }
+
+        function readSavedState() {
+            try {
+                return JSON.parse(localStorage.getItem(storageKey) || '{}');
+            } catch {
+                return {};
+            }
         }
 
         function numberFrom(input, fallback) {
@@ -271,14 +298,51 @@
             return Number.isFinite(value) ? value : fallback;
         }
 
+        function readState() {
+            return {
+                goal: Math.max(1, numberFrom(goalInput, 50)),
+                current: numberFrom(currentInput, 0),
+                adjust: numberFrom(adjustInput, 15)
+            };
+        }
+
+        function applyState(next, broadcast) {
+            isApplyingRemote = !broadcast;
+            goalInput.value = next.goal ?? 50;
+            currentInput.value = next.current ?? 0;
+            adjustInput.value = next.adjust ?? 15;
+            render(broadcast);
+            isApplyingRemote = false;
+        }
+
         function saveState(goal, current, adjust) {
             localStorage.setItem(storageKey, JSON.stringify({ goal, current, adjust }));
         }
 
-        function render() {
-            const goal = Math.max(1, numberFrom(goalInput, 50));
-            const current = numberFrom(currentInput, 0);
-            const adjust = numberFrom(adjustInput, 15);
+        function broadcastState(goal, current, adjust) {
+            if (!isControl || isApplyingRemote) return;
+            socket.emit('admin-update-wins', { goal, current, adjust });
+            fetch('/api/wins', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ goal, current, adjust }),
+                cache: 'no-store'
+            }).catch(() => {});
+        }
+
+        async function fetchWinsState() {
+            try {
+                const response = await fetch(`/api/wins?t=${Date.now()}`, { cache: 'no-store' });
+                if (!response.ok) return;
+                const wins = await response.json();
+                applyState(wins, false);
+            } catch {
+                // TikTok Studio sometimes delays local browser requests; the next poll will retry.
+            }
+        }
+
+        function render(broadcast = true) {
+            const { goal, current, adjust } = readState();
             const percent = Math.max(0, Math.min(100, Math.round((current / goal) * 100)));
             const missing = Math.max(0, goal - current);
 
@@ -291,41 +355,59 @@
             percentLabel.textContent = `${percent}%`;
             statusText.textContent = current >= goal ? 'Meta completada' : `Faltan ${missing} wins`;
             saveState(goal, current, adjust);
+            if (broadcast) broadcastState(goal, current, adjust);
         }
 
         document.getElementById('add-btn').addEventListener('click', () => {
             currentInput.value = numberFrom(currentInput, 0) + numberFrom(adjustInput, 0);
-            render();
+            render(true);
+        });
+
+        document.getElementById('set-goal-btn').addEventListener('click', () => {
+            render(true);
+        });
+
+        document.getElementById('set-current-btn').addEventListener('click', () => {
+            render(true);
         });
 
         document.getElementById('subtract-btn').addEventListener('click', () => {
             currentInput.value = numberFrom(currentInput, 0) - Math.abs(numberFrom(adjustInput, 0));
-            render();
+            render(true);
         });
 
         document.getElementById('reset-btn').addEventListener('click', () => {
             currentInput.value = 0;
-            render();
+            render(true);
         });
 
         document.getElementById('hide-btn').addEventListener('click', () => {
             document.body.classList.toggle('clean');
         });
 
-        [goalInput, currentInput, adjustInput].forEach((input) => {
-            input.addEventListener('input', render);
+        socket.on('connect', () => {
+            fetchWinsState();
+        });
+
+        socket.on('sync-state', (state) => {
+            if (state.wins) applyState(state.wins, false);
+        });
+
+        socket.on('wins-update', (wins) => {
+            applyState(wins, false);
         });
 
         window.addEventListener('storage', (event) => {
             if (event.key !== storageKey || !event.newValue) return;
             const next = JSON.parse(event.newValue);
-            goalInput.value = next.goal ?? 50;
-            currentInput.value = next.current ?? 0;
-            adjustInput.value = next.adjust ?? 15;
-            render();
+            applyState(next, isControl);
         });
 
-        render();
+        if (!isControl) {
+            setInterval(fetchWinsState, 500);
+        }
+        fetchWinsState();
+        render(false);
     </script>
 </body>
 </html>
