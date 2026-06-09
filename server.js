@@ -17,7 +17,7 @@ function giftImage(fileName) {
 const BATTLE_GIFTS = {
     enemy: [
         { name: 'Corazon coreano', coins: 5, image: giftImage('Corazón Coreano.png'), tokens: ['corazon coreano', 'corazón coreano'] },
-        { name: 'Rosa grande', coins: 10, image: giftImage('Rosa Grande.png'), tokens: ['rosa grande'] },
+        { name: 'Rosa grande', coins: 10, image: giftImage('Rosa Grande.png'), tokens: ['rosa grande', 'rosa', 'rose'] },
         { name: 'Rosquilla', coins: 30, image: giftImage('Dona.png'), tokens: ['rosquilla', 'dona', 'donut'] },
         { name: 'Control', coins: 100, image: giftImage('Control.png'), tokens: ['control'] },
         { name: 'Pistola de dinero', coins: 500, image: giftImage('Pistola de Diamantes.png'), tokens: ['pistola de dinero', 'pistola de diamantes', 'money gun'] },
@@ -208,6 +208,69 @@ function giftValues(data) {
     ].filter((value) => value !== undefined && value !== null);
 }
 
+function firstText(values, fallback) {
+    for (const value of values) {
+        const text = String(value ?? '').trim();
+        if (text) return text;
+    }
+
+    return fallback;
+}
+
+function positiveNumber(values, fallback = 0) {
+    for (const value of values) {
+        const parsed = parseInt(value, 10);
+        if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    }
+
+    return fallback;
+}
+
+const KNOWN_REAL_GIFT_COINS = new Map([
+    ['rosa', 1],
+    ['rose', 1],
+    ['control', 100]
+]);
+
+function knownRealGiftCoins(data) {
+    const values = giftValues(data).map((value) => normalizeGiftText(value)).filter(Boolean);
+    for (const value of values) {
+        if (KNOWN_REAL_GIFT_COINS.has(value)) return KNOWN_REAL_GIFT_COINS.get(value);
+    }
+
+    return 0;
+}
+
+function realGiftCoins(data) {
+    // The battle cards are only visual; never use their displayed value as a score fallback.
+    return positiveNumber([
+        data.diamondCount,
+        data.diamond_count,
+        data.diamondCost,
+        data.gift?.diamondCount,
+        data.gift?.diamond_count,
+        data.gift?.diamondCost,
+        data.giftInfo?.diamondCount,
+        data.giftInfo?.diamond_count,
+        data.giftInfo?.diamondCost,
+        data.giftDetails?.diamondCount,
+        data.giftDetails?.diamond_count,
+        data.giftDetails?.diamondCost,
+        data.extendedGiftInfo?.diamondCount,
+        data.extendedGiftInfo?.diamond_count,
+        data.extendedGiftInfo?.diamondCost
+    ], knownRealGiftCoins(data));
+}
+
+function realGiftName(data, fallbackName) {
+    return firstText([
+        data.giftName,
+        data.gift?.name,
+        data.extendedGiftInfo?.name,
+        data.extendedGiftInfo?.giftName
+    ], fallbackName);
+}
+
 function findGiftRule(rules, data) {
     const values = giftValues(data).map((value) => normalizeGiftText(value)).filter(Boolean);
     return (rules || []).find((rule) => {
@@ -242,7 +305,7 @@ function giftMatches(matchList, data) {
     return tokens.some((token) => values.some((value) => value === token));
 }
 
-function applyBattleGift(data, repeatCount, forcedSide) {
+function applyBattleGift(data, repeatCount, forcedSide, unitCoinsOverride) {
     const battle = auctionState.battle;
     const gift = resolveBattleGift(data, forcedSide);
 
@@ -250,14 +313,17 @@ function applyBattleGift(data, repeatCount, forcedSide) {
 
     const { side, rule } = gift;
     const amount = Math.max(1, numberOr(repeatCount, 1));
-    const points = amount * rule.coins;
+    const unitCoins = positiveNumber([unitCoinsOverride], realGiftCoins(data));
+    if (!unitCoins) return null;
+
+    const points = amount * unitCoins;
     if (side === 'hero') battle.heroScore += points;
     else battle.enemyScore += points;
 
     battle.lastSide = side;
-    battle.lastGiftName = rule.name;
+    battle.lastGiftName = realGiftName(data, rule.name);
     battle.lastGiftImage = rule.image;
-    battle.lastGiftCoins = rule.coins;
+    battle.lastGiftCoins = unitCoins;
     battle.lastDonor = textOr(data.nickname || data.uniqueId || data.userId, 'Usuario');
     battle.lastAmount = points;
     battle.lastEventId = Date.now();
@@ -353,7 +419,9 @@ io.on('connection', (socket) => {
             tiktokConnection.disconnect();
         }
 
-        tiktokConnection = new WebcastPushConnection(username);
+        tiktokConnection = new WebcastPushConnection(username, {
+            enableExtendedGiftInfo: true
+        });
 
         tiktokConnection.connect().then(state => {
             console.info(`Conectado al live de ${username}`);
@@ -371,8 +439,8 @@ io.on('connection', (socket) => {
         tiktokConnection.on('gift', (data) => {
             if (!(data.giftType === 1 && !data.repeatEnd)) {
                 const repeatCount = parseInt(data.repeatCount, 10) || 1;
-                const diamondCount = parseInt(data.diamondCount, 10) || 0;
-                const totalCoins = diamondCount * repeatCount;
+                const unitCoins = realGiftCoins(data);
+                const totalCoins = unitCoins * repeatCount;
                 if (totalCoins <= 0) return;
 
                 const donorId = data.uniqueId || data.userId || data.nickname || `donor_${Date.now()}`;
@@ -393,7 +461,7 @@ io.on('connection', (socket) => {
                     newDonationId: donorId
                 });
 
-                applyBattleGift(data, repeatCount);
+                applyBattleGift(data, repeatCount, undefined, unitCoins);
                 
                 if (auctionState.mode === 'elimination' || auctionState.mode === 'classic') {
                     const minRequired = parseInt(auctionState.minCoins) || 100;
@@ -599,7 +667,7 @@ io.on('connection', (socket) => {
             giftName: rule.name,
             nickname: data?.nickname || 'Test',
             uniqueId: `battle_test_${side}`
-        }, repeatCount, side);
+        }, repeatCount, side, rule.coins);
     });
 
     socket.on('admin-add-comment-test', (comment) => {
