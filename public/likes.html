@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LIKES OVERLAY - TikTok</title>
     <script src="/socket.io/socket.io.js"></script>
+    <script src="/page-menu.js" defer></script>
     <style>
         :root {
             --neon-color: #00f2ea;
@@ -184,11 +185,6 @@
         socket.on('likes-update', (data) => {
             totalLikes.textContent = data.totalLikes || 0;
             renderLikes(data.participants || {});
-        });
-
-        socket.on('clear-all-broadcast', () => {
-            totalLikes.textContent = '0';
-            renderLikes({});
         });
 
         socket.on('clear-likes-broadcast', () => {

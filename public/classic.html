@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CONTROL PANEL CLÁSICO - TikTok Auction</title>
     <script src="/socket.io/socket.io.js"></script>
+    <script src="/page-menu.js" defer></script>
     <style>
         :root {
             --neon-color: #00ff00; /* Verde por defecto para diferenciar */
@@ -213,11 +214,6 @@
         <div id="ranking-container"></div>
     </div>
 
-    <div id="links-panel">
-        <b>LINK PARA OBS (Transparente):</b><br>
-        <code>http://localhost:3000/auction.html</code>
-    </div>
-
     <script>
         const socket = io();
         let timeLeft = 0;
@@ -232,6 +228,21 @@
 
         function sendTheme(color) {
             socket.emit('admin-change-theme', color);
+        }
+
+        function createRandomTestDonor(totalCoins) {
+            const names = ['Luna Vega', 'Max Rider', 'Sofia Nova', 'Alex Byte', 'Mia Flow', 'Nico Star', 'Emma Lux', 'Leo Beats'];
+            const handles = ['luna_live', 'maxdrops', 'sofi_gifts', 'alexbyte', 'miaflow', 'nicostar', 'emmalux', 'leobeats'];
+            const index = Math.floor(Math.random() * names.length);
+            const suffix = Math.floor(Math.random() * 9000 + 1000);
+            const handle = `${handles[index]}_${suffix}`;
+
+            return {
+                uniqueId: `test_${handle}`,
+                nickname: `${names[index]} (@${handle})`,
+                profilePictureUrl: `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(names[index])}`,
+                totalCoins
+            };
         }
 
         socket.on('change-theme-broadcast', (color) => {
@@ -266,13 +277,12 @@
 
         document.getElementById('test-btn').addEventListener('click', () => {
             // Simular 10 rosas (10 coins)
-            socket.emit('admin-add-classic-test', { uniqueId: 'test_user', nickname: 'Donante Test', profilePictureUrl: 'https://p16-amd-va.tiktokcdn.com/img/musically-maliva-obj/1594805258216454~c5_100x100.jpeg', totalCoins: 10 });
+            socket.emit('admin-add-classic-test', createRandomTestDonor(10));
         });
 
         document.getElementById('test-big-btn').addEventListener('click', () => {
             // Simular 500 coins
-            const rid = Math.floor(Math.random()*999);
-            socket.emit('admin-add-classic-test', { uniqueId: 'test_'+rid, nickname: 'Ballena '+rid, profilePictureUrl: 'https://p16-amd-va.tiktokcdn.com/img/musically-maliva-obj/1594805258216454~c5_100x100.jpeg', totalCoins: 500 });
+            socket.emit('admin-add-classic-test', createRandomTestDonor(500));
         });
 
         socket.on('sync-state', (state) => {

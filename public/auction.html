@@ -5,11 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CLASSIC AUCTION - TikTok</title>
     <script src="/socket.io/socket.io.js"></script>
+    <script src="/page-menu.js" defer></script>
     <style>
         :root {
             --neon-color: #bc13fe; 
             --neon-glow: rgba(188, 19, 254, 0.8);
-            --neon-bg: rgba(5, 5, 15, 0.6); /* AZUL NOCHE MUCHO MÁS OSCURO Y TRANSPARENTE */
+            --neon-bg: rgba(188, 19, 254, 0.32);
             --coin-gold: #ffd700;
         }
 
@@ -29,7 +30,7 @@
         #auction-box {
             width: 350px;
             height: 450px;
-            background-color: transparent; /* TOTALMENTE TRANSPARENTE */
+            background-color: var(--neon-bg);
             border: 3px solid var(--neon-color);
             box-shadow: 0 0 30px var(--neon-glow), inset 0 0 40px var(--neon-glow);
             border-radius: 20px;
@@ -195,7 +196,7 @@
             const g = parseInt(color.slice(3,5), 16);
             const b = parseInt(color.slice(5,7), 16);
             document.documentElement.style.setProperty('--neon-glow', `rgba(${r}, ${g}, ${b}, 0.8)`);
-            document.documentElement.style.setProperty('--neon-bg', `rgba(0, 11, 30, 0.7)`);
+            document.documentElement.style.setProperty('--neon-bg', `rgba(${r}, ${g}, ${b}, 0.32)`);
         }
 
         socket.on('sync-state', (state) => {

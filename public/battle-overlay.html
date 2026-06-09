@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Overlay Batalla Live Studio</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/page-menu.js" defer></script>
+    <style>
+        :root {
+            --enemy: #ff2f7d;
+            --hero: #2dffbd;
+            --cyan: #27d9ff;
+            --gold: #ffd86b;
+            --danger: #ff385f;
+            --panel: rgba(5, 8, 22, 0.78);
+            --line: rgba(255, 255, 255, 0.22);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            margin: 0;
+            width: 100%;
+            min-height: 100%;
+            overflow: hidden;
+            background: transparent;
+            color: #fff;
+            font-family: "Segoe UI", Roboto, Arial, sans-serif;
+        }
+
+        .live-stage {
+            width: 100vw;
+            min-height: 100vh;
+            display: grid;
+            align-items: start;
+            justify-items: center;
+            padding: max(16px, 2.2vh) 16px;
+            pointer-events: none;
+        }
+
+        .battle-widget {
+            width: min(980px, calc(100vw - 24px));
+            display: grid;
+            gap: 10px;
+            padding: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.32);
+            border-radius: 8px;
+            background: linear-gradient(135deg, rgba(7, 10, 27, 0.84), rgba(9, 15, 24, 0.72));
+            box-shadow: 0 16px 42px rgba(0, 0, 0, 0.38), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(7px);
+        }
+
+        .top-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(116px, 150px) minmax(0, 1fr);
+            gap: 10px;
+            align-items: stretch;
+        }
+
+        .team {
+            min-width: 0;
+            display: grid;
+            grid-template-columns: 82px 1fr;
+            align-items: center;
+            gap: 10px;
+            padding: 9px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.28);
+            overflow: hidden;
+        }
+
+        .team.enemy {
+            border-color: rgba(255, 47, 125, 0.58);
+            box-shadow: inset 0 0 28px rgba(255, 47, 125, 0.16);
+        }
+
+        .team.hero {
+            direction: rtl;
+            border-color: rgba(45, 255, 189, 0.58);
+            box-shadow: inset 0 0 28px rgba(45, 255, 189, 0.15);
+        }
+
+        .team.hero .team-copy {
+            direction: ltr;
+            text-align: right;
+        }
+
+        .gift-frame {
+            width: 82px;
+            aspect-ratio: 1;
+            display: grid;
+            place-items: center;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.08);
+            overflow: hidden;
+        }
+
+        .gift-carousel {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+
+        .gift-slide {
+            position: absolute;
+            inset: 0;
+            display: grid;
+            grid-template-rows: 1fr auto;
+            place-items: center;
+            gap: 2px;
+            padding: 6px 5px;
+            opacity: 0;
+            transform: scale(0.9);
+            transition: opacity 220ms ease, transform 220ms ease;
+        }
+
+        .gift-slide.active {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        .gift-slide img {
+            width: 100%;
+            height: 100%;
+            min-height: 0;
+            object-fit: contain;
+            filter: drop-shadow(0 0 14px rgba(255, 255, 255, 0.2));
+        }
+
+        .gift-slide b {
+            color: var(--gold);
+            font-size: 0.74rem;
+            line-height: 1;
+        }
+
+        .team-copy {
+            min-width: 0;
+            display: grid;
+            gap: 4px;
+        }
+
+        .label {
+            color: rgba(255, 255, 255, 0.76);
+            font-size: clamp(0.78rem, 2.5vw, 1rem);
+            font-weight: 1000;
+            line-height: 1;
+            text-transform: uppercase;
+        }
+
+        .score {
+            min-width: 0;
+            font-size: clamp(2.5rem, 9vw, 5.2rem);
+            font-weight: 1000;
+            line-height: 0.84;
+            font-variant-numeric: tabular-nums;
+            letter-spacing: 0;
+        }
+
+        .enemy .score {
+            color: var(--enemy);
+            text-shadow: 0 0 20px rgba(255, 47, 125, 0.48);
+        }
+
+        .hero .score {
+            color: var(--hero);
+            text-shadow: 0 0 20px rgba(45, 255, 189, 0.42);
+        }
+
+        .gift-name {
+            min-height: 16px;
+            color: rgba(255, 255, 255, 0.64);
+            font-size: 0.68rem;
+            font-weight: 1000;
+            line-height: 1.1;
+            text-transform: uppercase;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .timer-box {
+            display: grid;
+            place-items: center;
+            align-content: center;
+            gap: 3px;
+            min-height: 104px;
+            border: 1px solid rgba(39, 217, 255, 0.42);
+            border-radius: 8px;
+            background: rgba(0, 8, 18, 0.64);
+            box-shadow: inset 0 0 28px rgba(39, 217, 255, 0.12);
+        }
+
+        .timer-title {
+            color: var(--gold);
+            font-size: 0.68rem;
+            font-weight: 1000;
+            text-transform: uppercase;
+        }
+
+        #timer {
+            color: #fff;
+            font-family: Consolas, "Courier New", monospace;
+            font-size: clamp(3.6rem, 12vw, 6.2rem);
+            font-weight: 1000;
+            line-height: 0.9;
+            text-shadow: 0 0 22px rgba(39, 217, 255, 0.48);
+            font-variant-numeric: tabular-nums;
+        }
+
+        #timer.danger {
+            color: var(--danger);
+            animation: pulse 520ms ease-in-out infinite alternate;
+            text-shadow: 0 0 26px rgba(255, 56, 95, 0.74);
+        }
+
+        @keyframes pulse {
+            from { transform: scale(1); }
+            to { transform: scale(1.08); }
+        }
+
+        .bar {
+            position: relative;
+            height: 34px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.26);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .fill {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 50%;
+            transition: width 260ms ease;
+        }
+
+        #enemy-fill {
+            left: 0;
+            background: linear-gradient(90deg, #9f003e, var(--enemy));
+            box-shadow: 0 0 20px rgba(255, 47, 125, 0.5);
+        }
+
+        #hero-fill {
+            right: 0;
+            background: linear-gradient(90deg, var(--hero), #00b7ff);
+            box-shadow: 0 0 20px rgba(45, 255, 189, 0.46);
+        }
+
+        #marker {
+            position: absolute;
+            top: -2px;
+            bottom: -2px;
+            left: 50%;
+            width: 4px;
+            border-radius: 999px;
+            background: #fff;
+            box-shadow: 0 0 16px rgba(255, 255, 255, 0.82);
+            transform: translateX(-50%);
+            transition: left 260ms ease;
+        }
+
+        .bottom-row {
+            display: grid;
+            grid-template-columns: 70px 1fr 70px;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .percent {
+            color: rgba(255, 255, 255, 0.78);
+            font-size: 0.82rem;
+            font-weight: 1000;
+            text-align: center;
+        }
+
+        .last {
+            min-height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 5px 9px;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.26);
+            color: rgba(255, 255, 255, 0.82);
+            font-size: clamp(0.72rem, 2.6vw, 0.98rem);
+            font-weight: 1000;
+            text-align: center;
+            text-transform: uppercase;
+            overflow-wrap: anywhere;
+        }
+
+        .battle-widget.flash-enemy .team.enemy,
+        .battle-widget.flash-hero .team.hero {
+            animation: hit 520ms ease;
+        }
+
+        @keyframes hit {
+            0% { transform: scale(1); filter: brightness(1); }
+            42% { transform: scale(1.03); filter: brightness(1.36); }
+            100% { transform: scale(1); filter: brightness(1); }
+        }
+
+        @media (max-width: 620px), (max-aspect-ratio: 9 / 13) {
+            .live-stage {
+                padding: 12px 10px;
+            }
+
+            .battle-widget {
+                width: min(430px, calc(100vw - 16px));
+                gap: 8px;
+                padding: 10px;
+            }
+
+            .top-row {
+                grid-template-columns: 1fr;
+            }
+
+            .team,
+            .team.hero {
+                direction: ltr;
+                grid-template-columns: 76px 1fr;
+            }
+
+            .team.hero .team-copy {
+                text-align: left;
+            }
+
+            .gift-frame {
+                width: 76px;
+            }
+
+            .timer-box {
+                min-height: 92px;
+            }
+
+            .bottom-row {
+                grid-template-columns: 54px 1fr 54px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <main class="live-stage">
+        <section class="battle-widget" id="widget" aria-label="Overlay de batalla">
+            <div class="top-row">
+                <article class="team enemy">
+                    <div class="gift-frame">
+                        <div class="gift-carousel" id="enemy-carousel"></div>
+                    </div>
+                    <div class="team-copy">
+                        <div class="label" id="enemy-label">ENEMIGOS</div>
+                        <div class="score" id="enemy-score">0</div>
+                        <div class="gift-name" id="enemy-gift">Regalos enemigos</div>
+                    </div>
+                </article>
+
+                <div class="timer-box">
+                    <div class="timer-title">Batalla</div>
+                    <div id="timer">60</div>
+                </div>
+
+                <article class="team hero">
+                    <div class="gift-frame">
+                        <div class="gift-carousel" id="hero-carousel"></div>
+                    </div>
+                    <div class="team-copy">
+                        <div class="label" id="hero-label">HEROES</div>
+                        <div class="score" id="hero-score">0</div>
+                        <div class="gift-name" id="hero-gift">Regalos heroes</div>
+                    </div>
+                </article>
+            </div>
+
+            <div class="bottom-row">
+                <div class="percent" id="enemy-percent">50%</div>
+                <div class="bar" aria-hidden="true">
+                    <div class="fill" id="enemy-fill"></div>
+                    <div class="fill" id="hero-fill"></div>
+                    <div id="marker"></div>
+                </div>
+                <div class="percent" id="hero-percent">50%</div>
+            </div>
+
+            <div class="last" id="last">Esperando batalla</div>
+        </section>
+    </main>
+
+    <script>
+        const socket = io();
+
+        const defaultEnemyGifts = [
+            { name: 'Corazon coreano', coins: 5, image: '/gift-images/Coraz%C3%B3n%20Coreano.png' },
+            { name: 'Rosa grande', coins: 10, image: '/gift-images/Rosa%20Grande.png' },
+            { name: 'Rosquilla', coins: 30, image: '/gift-images/Dona.png' },
+            { name: 'Control', coins: 100, image: '/gift-images/Control.png' },
+            { name: 'Pistola de dinero', coins: 500, image: '/gift-images/Pistola%20de%20Diamantes.png' },
+            { name: 'Galaxia', coins: 1000, image: '/gift-images/Galaxia.png' }
+        ];
+
+        const defaultHeroGifts = [
+            { name: 'Fuegos artificiales', coins: 5, image: '/gift-images/Fuegos%20Artificiales.png' },
+            { name: 'Corazon', coins: 10, image: '/gift-images/Coraz%C3%B3n.png' },
+            { name: 'Capibara', coins: 30, image: '/gift-images/Capibara.png' },
+            { name: 'Super GG', coins: 100, image: '/gift-images/GG.png' },
+            { name: 'Inmersion en tu musica', coins: 500, image: '/gift-images/M%C3%BAsica%20agradable.png' },
+            { name: 'Sandia enamorada', coins: 1000, image: '/gift-images/Sand%C3%ADa%20enamorada.png' }
+        ];
+
+        const defaults = {
+            heroScore: 0,
+            enemyScore: 0,
+            heroLabel: 'HEROES',
+            enemyLabel: 'ENEMIGOS',
+            heroGifts: defaultHeroGifts,
+            enemyGifts: defaultEnemyGifts,
+            roundSeconds: 60,
+            slowFinalMs: 1800,
+            timerDuration: 60,
+            timerStartedAt: 0,
+            timerRunning: false,
+            lastSide: '',
+            lastGiftName: '',
+            lastGiftCoins: 0,
+            lastDonor: '',
+            lastAmount: 0,
+            lastEventId: 0
+        };
+
+        let battle = { ...defaults };
+        let serverOffsetMs = 0;
+        let carouselIndex = 0;
+        let seenEventId = 0;
+        let flashTimer = null;
+
+        const els = {
+            widget: document.getElementById('widget'),
+            enemyCarousel: document.getElementById('enemy-carousel'),
+            heroCarousel: document.getElementById('hero-carousel'),
+            enemyLabel: document.getElementById('enemy-label'),
+            heroLabel: document.getElementById('hero-label'),
+            enemyScore: document.getElementById('enemy-score'),
+            heroScore: document.getElementById('hero-score'),
+            enemyGift: document.getElementById('enemy-gift'),
+            heroGift: document.getElementById('hero-gift'),
+            timer: document.getElementById('timer'),
+            enemyFill: document.getElementById('enemy-fill'),
+            heroFill: document.getElementById('hero-fill'),
+            marker: document.getElementById('marker'),
+            enemyPercent: document.getElementById('enemy-percent'),
+            heroPercent: document.getElementById('hero-percent'),
+            last: document.getElementById('last')
+        };
+
+        function serverNow() {
+            return Date.now() + serverOffsetMs;
+        }
+
+        function giftsOf(gifts) {
+            return Array.isArray(gifts) && gifts.length ? gifts : [];
+        }
+
+        function giftSignature(gifts) {
+            return giftsOf(gifts).map((gift) => `${gift.name}:${gift.coins}:${gift.image}`).join('|');
+        }
+
+        function renderCarousel(container, gifts) {
+            const safeGifts = giftsOf(gifts);
+            const signature = giftSignature(safeGifts);
+
+            if (container.dataset.signature !== signature) {
+                container.dataset.signature = signature;
+                container.innerHTML = safeGifts.map((gift) => `
+                    <div class="gift-slide">
+                        <img src="${gift.image}" alt="${gift.name}" onerror="this.hidden=true">
+                        <b>${gift.coins}</b>
+                    </div>
+                `).join('');
+            }
+
+            const slides = [...container.querySelectorAll('.gift-slide')];
+            if (!slides.length) return;
+            const activeIndex = carouselIndex % slides.length;
+            slides.forEach((slide, index) => {
+                slide.classList.toggle('active', index === activeIndex);
+            });
+        }
+
+        function activeGiftName(gifts) {
+            const safeGifts = giftsOf(gifts);
+            if (!safeGifts.length) return '';
+            return safeGifts[carouselIndex % safeGifts.length].name;
+        }
+
+        function timeLeft() {
+            const duration = Math.max(1, parseInt(battle.timerDuration || battle.roundSeconds, 10) || defaults.roundSeconds);
+            const slow = Math.max(1000, parseInt(battle.slowFinalMs, 10) || defaults.slowFinalMs);
+
+            if (!battle.timerRunning || !battle.timerStartedAt) return duration;
+
+            const elapsed = Math.max(0, serverNow() - battle.timerStartedAt);
+            const normalSeconds = Math.max(0, duration - 2);
+            const normalMs = normalSeconds * 1000;
+            const finalMs = duration === 1 ? slow : slow * 2;
+            const totalMs = normalMs + finalMs;
+
+            if (elapsed >= totalMs) return 0;
+            if (duration === 1) return 1;
+            if (elapsed < normalMs) return duration - Math.floor(elapsed / 1000);
+            return elapsed - normalMs < slow ? 2 : 1;
+        }
+
+        function flash(side) {
+            if (!side) return;
+            clearTimeout(flashTimer);
+            els.widget.classList.remove('flash-enemy', 'flash-hero');
+            void els.widget.offsetWidth;
+            els.widget.classList.add(side === 'hero' ? 'flash-hero' : 'flash-enemy');
+            flashTimer = setTimeout(() => {
+                els.widget.classList.remove('flash-enemy', 'flash-hero');
+            }, 560);
+        }
+
+        function render() {
+            const total = battle.heroScore + battle.enemyScore;
+            const heroPercent = total > 0 ? Math.round((battle.heroScore / total) * 100) : 50;
+            const enemyPercent = 100 - heroPercent;
+            const currentTime = timeLeft();
+
+            els.enemyLabel.textContent = battle.enemyLabel;
+            els.heroLabel.textContent = battle.heroLabel;
+            els.enemyScore.textContent = battle.enemyScore;
+            els.heroScore.textContent = battle.heroScore;
+            els.enemyFill.style.width = `${enemyPercent}%`;
+            els.heroFill.style.width = `${heroPercent}%`;
+            els.marker.style.left = `${enemyPercent}%`;
+            els.enemyPercent.textContent = `${enemyPercent}%`;
+            els.heroPercent.textContent = `${heroPercent}%`;
+            els.enemyGift.textContent = activeGiftName(battle.enemyGifts);
+            els.heroGift.textContent = activeGiftName(battle.heroGifts);
+            els.timer.textContent = String(currentTime);
+            els.timer.classList.toggle('danger', currentTime > 0 && currentTime <= 2);
+            els.last.textContent = battle.lastSide
+                ? `${battle.lastDonor}: ${battle.lastGiftName} +${battle.lastAmount}`
+                : 'Esperando batalla';
+
+            renderCarousel(els.enemyCarousel, battle.enemyGifts);
+            renderCarousel(els.heroCarousel, battle.heroGifts);
+        }
+
+        function applyState(next) {
+            if (!next) return;
+            battle = { ...battle, ...next };
+
+            if (Number.isFinite(next.serverNow)) {
+                serverOffsetMs = next.serverNow - Date.now();
+            }
+
+            render();
+
+            if (battle.lastEventId && battle.lastEventId !== seenEventId) {
+                seenEventId = battle.lastEventId;
+                flash(battle.lastSide);
+            }
+        }
+
+        async function fetchBattle() {
+            try {
+                const response = await fetch(`/api/battle?t=${Date.now()}`, { cache: 'no-store' });
+                if (!response.ok) return;
+                applyState(await response.json());
+            } catch {
+                // The socket will retry on reconnect.
+            }
+        }
+
+        socket.on('connect', fetchBattle);
+        socket.on('battle-state-update', applyState);
+        socket.on('sync-state', (state) => {
+            if (state.battle) applyState({ ...state.battle, serverNow: Date.now() });
+        });
+
+        setInterval(() => {
+            carouselIndex += 1;
+            render();
+        }, 1700);
+        setInterval(() => render(), 120);
+        setInterval(fetchBattle, 1500);
+
+        applyState(defaults);
+        fetchBattle();
+    </script>
+</body>
+</html>

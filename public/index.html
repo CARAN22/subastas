@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CONTROL PANEL - TikTok Auction</title>
     <script src="/socket.io/socket.io.js"></script>
+    <script src="/page-menu.js" defer></script>
     <style>
         :root {
             --neon-color: #bc13fe; 
@@ -196,54 +197,6 @@
         <div id="participants-container"></div>
     </div>
 
-    <nav id="links-panel" aria-label="Paginas y overlays">
-        <h3>Entrar a paginas</h3>
-        <a class="page-link" href="/index.html" target="_blank" rel="noopener">
-            <span>Panel principal</span>
-            <code>/index.html</code>
-        </a>
-        <a class="page-link" href="/overlay.html" target="_blank" rel="noopener">
-            <span>Overlay eliminacion</span>
-            <code>/overlay.html</code>
-        </a>
-        <a class="page-link" href="/auction.html" target="_blank" rel="noopener">
-            <span>Overlay clasico</span>
-            <code>/auction.html</code>
-        </a>
-        <a class="page-link" href="/classic.html" target="_blank" rel="noopener">
-            <span>Subasta clasica</span>
-            <code>/classic.html</code>
-        </a>
-        <a class="page-link" href="/likes.html" target="_blank" rel="noopener">
-            <span>Likes</span>
-            <code>/likes.html</code>
-        </a>
-        <a class="page-link" href="/donors.html" target="_blank" rel="noopener">
-            <span>Top donadores</span>
-            <code>/donors.html</code>
-        </a>
-        <a class="page-link" href="/prizes.html" target="_blank" rel="noopener">
-            <span>Premios live</span>
-            <code>/prizes.html</code>
-        </a>
-        <a class="page-link" href="/wins.html?control=1" target="_blank" rel="noopener">
-            <span>Wins con controles</span>
-            <code>/wins.html?control=1</code>
-        </a>
-        <a class="page-link" href="/wins.html" target="_blank" rel="noopener">
-            <span>Wins OBS limpio</span>
-            <code>/wins.html</code>
-        </a>
-        <a class="page-link" href="/comments.html?control=1" target="_blank" rel="noopener">
-            <span>Comentarios control</span>
-            <code>/comments.html?control=1</code>
-        </a>
-        <a class="page-link" href="/comments.html?voice=1" target="_blank" rel="noopener">
-            <span>Comentarios voz</span>
-            <code>/comments.html?voice=1</code>
-        </a>
-    </nav>
-
     <script>
         const socket = io();
         document.getElementById('classic-settings').innerHTML = '<label>SEG. EXTRA POR MONEDA:</label><input type="number" id="extra-time" value="1">';
@@ -261,6 +214,21 @@
 
         function sendTheme(color) {
             socket.emit('admin-change-theme', color);
+        }
+
+        function createRandomTestDonor(totalCoins) {
+            const names = ['Luna Vega', 'Max Rider', 'Sofia Nova', 'Alex Byte', 'Mia Flow', 'Nico Star', 'Emma Lux', 'Leo Beats'];
+            const handles = ['luna_live', 'maxdrops', 'sofi_gifts', 'alexbyte', 'miaflow', 'nicostar', 'emmalux', 'leobeats'];
+            const index = Math.floor(Math.random() * names.length);
+            const suffix = Math.floor(Math.random() * 9000 + 1000);
+            const handle = `${handles[index]}_${suffix}`;
+
+            return {
+                uniqueId: `test_${handle}`,
+                nickname: `${names[index]} (@${handle})`,
+                profilePictureUrl: `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(names[index])}`,
+                totalCoins
+            };
         }
 
         socket.on('sync-state', (state) => {
@@ -342,13 +310,7 @@
         });
 
         document.getElementById('test-donor-btn').addEventListener('click', () => {
-            const id = 'donor_' + Math.floor(Math.random()*5 + 1);
-            socket.emit('admin-add-classic-test', {
-                uniqueId: id,
-                nickname: 'Donador ' + id.split('_')[1],
-                profilePictureUrl: 'https://p16-amd-va.tiktokcdn.com/img/musically-maliva-obj/1594805258216454~c5_100x100.jpeg',
-                totalCoins: Math.floor(Math.random()*500 + 50)
-            });
+            socket.emit('admin-add-classic-test', createRandomTestDonor(Math.floor(Math.random()*500 + 50)));
         });
 
         document.getElementById('test-like-btn').addEventListener('click', () => {
