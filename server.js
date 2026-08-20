@@ -37,6 +37,32 @@ function knownUser(value) {
     return Object.hasOwn(USERS, username) ? username : null;
 }
 
+function normalizeTikTokUsername(value) {
+    const input = String(value ?? '').trim();
+    if (!input) return '';
+
+    try {
+        const url = new URL(input);
+        const match = url.pathname.match(/\/@([^/?#]+)/);
+        if (match) return decodeURIComponent(match[1]).trim();
+    } catch {
+        // No es una URL: se trata como nombre de usuario.
+    }
+
+    return input.replace(/^@/, '').split(/[/?#]/, 1)[0].trim();
+}
+
+function describeTikTokError(error) {
+    const message = String(error?.message || error || 'Error desconocido');
+    const normalized = message.toLowerCase();
+
+    if (normalized.includes('user_not_found') || normalized.includes('room not found') || normalized.includes('not live')) {
+        return 'No se encontró un LIVE activo para este usuario. Inicia la transmisión y verifica el nombre.';
+    }
+
+    return `TikTok no pudo conectar: ${message}`;
+}
+
 function overlayUserFromReferer(referer) {
     try {
         return knownUser(new URL(referer).searchParams.get('overlayUser'));
@@ -611,11 +637,21 @@ io.on('connection', (socket) => {
         auctionState.extraTimePerCoin = val;
     });
 
-    socket.on('set-tiktok-user', (username) => {
+    socket.on('set-tiktok-user', (requestedUsername) => {
+        const username = normalizeTikTokUsername(requestedUsername);
+        if (!username) {
+            socket.emit('tiktok-error', 'Escribe un usuario de TikTok válido.');
+            return;
+        }
+
         activeOverlayUser = context.user;
         if (context.tiktokConnection) {
             context.tiktokConnection.disconnect();
         }
+
+        auctionState.tiktokUser = username;
+        auctionState.isConnected = false;
+        socket.emit('tiktok-connecting', username);
 
         context.tiktokConnection = new WebcastPushConnection(username, {
             enableExtendedGiftInfo: true
@@ -631,7 +667,7 @@ io.on('connection', (socket) => {
             inContext(context, () => {
                 console.error('Error TikTok:', err);
                 auctionState.isConnected = false;
-                socket.emit('tiktok-error', err.toString());
+                socket.emit('tiktok-error', describeTikTokError(err));
                 emitToContext('sync-state', auctionState);
             });
         });

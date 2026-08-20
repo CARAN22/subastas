@@ -277,6 +277,24 @@
             if (user) socket.emit('set-tiktok-user', user);
         });
 
+        socket.on('tiktok-connecting', (username) => {
+            const statusEl = document.getElementById('connection-status');
+            statusEl.textContent = 'CONECTANDO: ' + username;
+            statusEl.style.background = '#d97706';
+        });
+
+        socket.on('tiktok-error', (message) => {
+            const statusEl = document.getElementById('connection-status');
+            statusEl.textContent = message;
+            statusEl.style.background = '#cc0000';
+        });
+
+        socket.on('tiktok-disconnected', () => {
+            const statusEl = document.getElementById('connection-status');
+            statusEl.textContent = 'DESCONECTADO';
+            statusEl.style.background = '#cc0000';
+        });
+
         document.getElementById('confirm-min-btn').addEventListener('click', () => {
             const min = parseInt(document.getElementById('min-coins').value);
             socket.emit('admin-update-min', min);
