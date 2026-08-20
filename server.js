@@ -53,8 +53,12 @@ function normalizeTikTokUsername(value) {
 }
 
 function describeTikTokError(error) {
-    const message = String(error?.message || error || 'Error desconocido');
+    const message = String(error?.exception?.message || error?.message || error?.info || error || 'Error desconocido');
     const normalized = message.toLowerCase();
+
+    if (normalized.includes('rate limit') || normalized.includes('rate limited') || normalized.includes('too many requests')) {
+        return 'TikTok limitó temporalmente las conexiones. Espera unos minutos antes de reintentar.';
+    }
 
     if (normalized.includes('user_not_found') || normalized.includes('room not found') || normalized.includes('not live')) {
         return 'No se encontró un LIVE activo para este usuario. Inicia la transmisión y verifica el nombre.';
@@ -654,8 +658,21 @@ io.on('connection', (socket) => {
         socket.emit('tiktok-connecting', username);
 
         context.tiktokConnection = new WebcastPushConnection(username, {
-            enableExtendedGiftInfo: true
+            // En hosts compartidos como Render, resolver la sala antes de
+            // conectar puede activar un captcha de TikTok. El firmador admite
+            // recibir el uniqueId directamente y evita esa consulta inicial.
+            connectWithUniqueId: true,
+            fetchRoomInfoOnConnect: false,
+            enableExtendedGiftInfo: false,
+            processInitialData: false
         });
+
+        context.tiktokConnection.on('error', (error) => inContext(context, () => {
+            console.error('Error TikTok durante el LIVE:', error);
+            auctionState.isConnected = false;
+            socket.emit('tiktok-error', describeTikTokError(error));
+            emitToContext('sync-state', auctionState);
+        }));
 
         context.tiktokConnection.connect().then(state => {
             console.info(`Conectado al live de ${username}`);
