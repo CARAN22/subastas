@@ -299,9 +299,10 @@
         function chooseMaleSpanishVoice() {
             if (!('speechSynthesis' in window)) return;
             const voices = window.speechSynthesis.getVoices();
-            selectedVoice = voices.find((voice) => /es(-|_)ES/i.test(voice.lang) && /male|hombre|jorge|diego|carlos|juan|pablo|miguel/i.test(voice.name))
+            selectedVoice = voices.find((voice) => /es(-|_)(MX|419|US|AR|CO|CL|PE)/i.test(voice.lang) && /male|hombre|jorge|diego|carlos|juan|pablo|miguel/i.test(voice.name))
+                || voices.find((voice) => /es(-|_)(MX|419|US|AR|CO|CL|PE)/i.test(voice.lang) && !/female|mujer|monica|lucia|elvira|paulina/i.test(voice.name))
                 || voices.find((voice) => /^es(-|_)/i.test(voice.lang) && /male|hombre|jorge|diego|carlos|juan|pablo|miguel/i.test(voice.name))
-                || voices.find((voice) => /es(-|_)/i.test(voice.lang) && !/female|mujer|monica|monica|lucia|elvira|paulina/i.test(voice.name))
+                || voices.find((voice) => /^es(-|_)/i.test(voice.lang) && !/female|mujer|monica|lucia|elvira|paulina/i.test(voice.name))
                 || voices.find((voice) => /^es(-|_)/i.test(voice.lang))
                 || null;
         }
@@ -311,9 +312,9 @@
             spokenIds.add(comment.id);
             const name = comment.name || comment.uniqueId || 'Usuario';
             const utterance = new SpeechSynthesisUtterance(`${name} dice: ${comment.text}`);
-            utterance.lang = 'es-ES';
-            utterance.rate = 1;
-            utterance.pitch = 1;
+            utterance.lang = 'es-419';
+            utterance.rate = 0.95;
+            utterance.pitch = 0.72;
             if (!selectedVoice) chooseMaleSpanishVoice();
             if (selectedVoice) utterance.voice = selectedVoice;
             window.speechSynthesis.speak(utterance);
