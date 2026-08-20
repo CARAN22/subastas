@@ -299,8 +299,17 @@
         function chooseMaleSpanishVoice() {
             if (!('speechSynthesis' in window)) return;
             const voices = window.speechSynthesis.getVoices();
-            selectedVoice = voices.find((voice) => /es(-|_)(MX|419|US|AR|CO|CL|PE)/i.test(voice.lang) && /male|hombre|jorge|diego|carlos|juan|pablo|miguel/i.test(voice.name))
-                || voices.find((voice) => /es(-|_)(MX|419|US|AR|CO|CL|PE)/i.test(voice.lang) && !/female|mujer|monica|lucia|elvira|paulina/i.test(voice.name))
+            const isMale = (voice) => /male|hombre|jorge|diego|carlos|juan|pablo|miguel/i.test(voice.name);
+            const isFemale = (voice) => /female|mujer|monica|lucia|elvira|paulina/i.test(voice.name);
+            const isColombianSpanish = (voice) => /^es(-|_)CO$/i.test(voice.lang);
+            const isLatinSpanish = (voice) => /es(-|_)(MX|419|US|AR|CL|PE)/i.test(voice.lang);
+
+            // El navegador solo puede usar las voces instaladas; se prioriza
+            // es-CO masculina y después una voz masculina latinoamericana.
+            selectedVoice = voices.find((voice) => isColombianSpanish(voice) && isMale(voice))
+                || voices.find((voice) => isColombianSpanish(voice) && !isFemale(voice))
+                || voices.find((voice) => isLatinSpanish(voice) && isMale(voice))
+                || voices.find((voice) => isLatinSpanish(voice) && !isFemale(voice))
                 || voices.find((voice) => /^es(-|_)/i.test(voice.lang) && /male|hombre|jorge|diego|carlos|juan|pablo|miguel/i.test(voice.name))
                 || voices.find((voice) => /^es(-|_)/i.test(voice.lang) && !/female|mujer|monica|lucia|elvira|paulina/i.test(voice.name))
                 || voices.find((voice) => /^es(-|_)/i.test(voice.lang))
@@ -312,7 +321,7 @@
             spokenIds.add(comment.id);
             const name = comment.name || comment.uniqueId || 'Usuario';
             const utterance = new SpeechSynthesisUtterance(`${name} dice: ${comment.text}`);
-            utterance.lang = 'es-419';
+            utterance.lang = 'es-CO';
             utterance.rate = 0.95;
             utterance.pitch = 0.72;
             if (!selectedVoice) chooseMaleSpanishVoice();
