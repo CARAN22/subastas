@@ -240,6 +240,7 @@
         const params = new URLSearchParams(window.location.search);
         const isControl = params.get('control') === '1';
         let voiceEnabled = params.get('voice') === '1' || isControl;
+        let selectedVoice = null;
         let bootstrapped = false;
         const knownIds = new Set();
         const spokenIds = new Set();
@@ -295,6 +296,16 @@
             list.replaceChildren(...visible.map(makeCard));
         }
 
+        function chooseMaleSpanishVoice() {
+            if (!('speechSynthesis' in window)) return;
+            const voices = window.speechSynthesis.getVoices();
+            selectedVoice = voices.find((voice) => /es(-|_)ES/i.test(voice.lang) && /male|hombre|jorge|diego|carlos|juan|pablo|miguel/i.test(voice.name))
+                || voices.find((voice) => /^es(-|_)/i.test(voice.lang) && /male|hombre|jorge|diego|carlos|juan|pablo|miguel/i.test(voice.name))
+                || voices.find((voice) => /es(-|_)/i.test(voice.lang) && !/female|mujer|monica|monica|lucia|elvira|paulina/i.test(voice.name))
+                || voices.find((voice) => /^es(-|_)/i.test(voice.lang))
+                || null;
+        }
+
         function speak(comment) {
             if (!voiceEnabled || !comment || spokenIds.has(comment.id) || !('speechSynthesis' in window)) return;
             spokenIds.add(comment.id);
@@ -303,6 +314,8 @@
             utterance.lang = 'es-ES';
             utterance.rate = 1;
             utterance.pitch = 1;
+            if (!selectedVoice) chooseMaleSpanishVoice();
+            if (selectedVoice) utterance.voice = selectedVoice;
             window.speechSynthesis.speak(utterance);
         }
 
@@ -343,6 +356,11 @@
 
         function updateVoiceButton() {
             if (voiceBtn) voiceBtn.textContent = voiceEnabled ? 'Voz on' : 'Voz off';
+        }
+
+        if ('speechSynthesis' in window) {
+            chooseMaleSpanishVoice();
+            window.speechSynthesis.addEventListener('voiceschanged', chooseMaleSpanishVoice);
         }
 
         document.getElementById('send-test-btn')?.addEventListener('click', async () => {
