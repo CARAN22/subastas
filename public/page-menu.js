@@ -1,6 +1,20 @@
 (function () {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('menu') === '0') return;
+    const overlayPath = new Set([
+        '/overlay.html',
+        '/auction.html',
+        '/likes.html',
+        '/donors.html',
+        '/prizes.html',
+        '/battle-overlay.html',
+        '/wins.html',
+        '/comments.html'
+    ]);
+    const isCleanBattle = window.location.pathname === '/battle.html'
+        && (params.get('clean') === '1' || params.get('obs') === '1')
+        && params.get('control') !== '1';
+
+    if (params.get('menu') === '0' || overlayPath.has(window.location.pathname) || isCleanBattle) return;
 
     const links = [
         { label: 'Panel principal', href: '/index.html' },

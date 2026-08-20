@@ -17,6 +17,7 @@ const USERS = {
 };
 const sessions = new Map();
 let activeContext = null;
+let activeOverlayUser = null;
 
 app.get('/healthz', (req, res) => {
     res.status(200).send('ok');
@@ -31,8 +32,63 @@ function getUserFromRequest(req) {
     return sessionId ? sessions.get(sessionId) : null;
 }
 
+function knownUser(value) {
+    const username = String(value ?? '').trim();
+    return Object.hasOwn(USERS, username) ? username : null;
+}
+
+function overlayUserFromReferer(referer) {
+    try {
+        return knownUser(new URL(referer).searchParams.get('overlayUser'));
+    } catch {
+        return null;
+    }
+}
+
+function getOverlayUser(req) {
+    return knownUser(req.query?.overlayUser)
+        || overlayUserFromReferer(req.headers?.referer)
+        || activeOverlayUser;
+}
+
+// Los overlays se cargan desde TikTok Live Studio/OBS, que no comparte la
+// cookie de sesión del navegador donde se administra el panel.
+const PUBLIC_OVERLAY_PAGES = new Set([
+    '/overlay.html',
+    '/auction.html',
+    '/likes.html',
+    '/donors.html',
+    '/prizes.html',
+    '/battle-overlay.html'
+]);
+const PUBLIC_OVERLAY_READ_ENDPOINTS = new Set([
+    '/api/wins',
+    '/api/comments',
+    '/api/battle'
+]);
+
+function isPublicOverlayRequest(req) {
+    if (PUBLIC_OVERLAY_PAGES.has(req.path)) return true;
+
+    // Wins y comentarios son overlays por defecto; los controles siguen protegidos.
+    if (req.path === '/wins.html' || req.path === '/comments.html') {
+        return req.query.control !== '1';
+    }
+
+    // La página de batalla normal es un panel; las vistas limpias son overlays.
+    if (req.path === '/battle.html') {
+        return (req.query.clean === '1' || req.query.obs === '1') && req.query.control !== '1';
+    }
+
+    if (req.method !== 'GET') return false;
+
+    return req.path === '/page-menu.js'
+        || req.path.startsWith('/gift-images/')
+        || PUBLIC_OVERLAY_READ_ENDPOINTS.has(req.path);
+}
+
 function requireAuth(req, res, next) {
-    if (req.path === '/login.html' || req.path === '/api/login' || req.path === '/api/logout' || getUserFromRequest(req)) {
+    if (req.path === '/login.html' || req.path === '/api/login' || req.path === '/api/logout' || isPublicOverlayRequest(req) || getUserFromRequest(req)) {
         return next();
     }
     if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'No autenticado' });
@@ -74,6 +130,7 @@ app.post('/api/login', (req, res) => {
 
     const sessionId = crypto.randomBytes(24).toString('hex');
     sessions.set(sessionId, username);
+    activeOverlayUser = username;
     res.set('Set-Cookie', `subastini_session=${sessionId}; HttpOnly; Path=/; SameSite=Lax`);
     res.json({ username });
 });
@@ -162,6 +219,22 @@ function inContext(context, callback) {
     activeContext = context;
     try { return callback(); } finally { activeContext = previous; }
 }
+
+function requestContext(req) {
+    const user = getUserFromRequest(req)
+        || (isPublicOverlayRequest(req) ? getOverlayUser(req) : null);
+
+    return user ? { user, room: `user:${user}`, state: stateFor(user) } : null;
+}
+
+function inRequestContext(req, res, callback) {
+    const context = requestContext(req);
+    if (!context) {
+        return res.status(503).json({ error: 'No hay un panel activo para este overlay' });
+    }
+    return inContext(context, callback);
+}
+
 function emitToContext(event, payload) {
     if (activeContext) io.to(activeContext.room).emit(event, payload);
 }
@@ -416,12 +489,11 @@ function applyBattleGift(data, repeatCount, forcedSide, unitCoinsOverride) {
 }
 
 app.get('/api/wins', (req, res) => {
-    inContext({ user: getUserFromRequest(req), room: `user:${getUserFromRequest(req)}` , state: stateFor(getUserFromRequest(req)) }, () => res.json(auctionState.wins));
+    return inRequestContext(req, res, () => res.json(auctionState.wins));
 });
 
 app.post('/api/wins', (req, res) => {
-    const user = getUserFromRequest(req);
-    return inContext({ user, room: `user:${user}`, state: stateFor(user) }, () => {
+    return inRequestContext(req, res, () => {
         const wins = setWinsState(req.body || {});
         emitToContext('wins-update', wins);
         res.json(wins);
@@ -429,13 +501,11 @@ app.post('/api/wins', (req, res) => {
 });
 
 app.get('/api/battle', (req, res) => {
-    const user = getUserFromRequest(req);
-    inContext({ user, room: `user:${user}`, state: stateFor(user) }, () => res.json(getBattleState()));
+    return inRequestContext(req, res, () => res.json(getBattleState()));
 });
 
 app.post('/api/battle/config', (req, res) => {
-    const user = getUserFromRequest(req);
-    return inContext({ user, room: `user:${user}`, state: stateFor(user) }, () => {
+    return inRequestContext(req, res, () => {
         const battle = setBattleConfig(req.body || {});
         emitToContext('battle-state-update', battle);
         res.json(battle);
@@ -443,8 +513,7 @@ app.post('/api/battle/config', (req, res) => {
 });
 
 app.post('/api/battle/reset', (req, res) => {
-    const user = getUserFromRequest(req);
-    return inContext({ user, room: `user:${user}`, state: stateFor(user) }, () => {
+    return inRequestContext(req, res, () => {
         const battle = resetBattleState();
         emitToContext('battle-state-update', battle);
         res.json(battle);
@@ -473,21 +542,18 @@ function pushComment(comment) {
 }
 
 app.get('/api/comments', (req, res) => {
-    const user = getUserFromRequest(req);
-    inContext({ user, room: `user:${user}`, state: stateFor(user) }, () => res.json({ comments: auctionState.comments || [] }));
+    return inRequestContext(req, res, () => res.json({ comments: auctionState.comments || [] }));
 });
 
 app.post('/api/comments/test', (req, res) => {
-    const user = getUserFromRequest(req);
-    return inContext({ user, room: `user:${user}`, state: stateFor(user) }, () => {
+    return inRequestContext(req, res, () => {
         const entry = pushComment(req.body || {});
         res.json({ comments: auctionState.comments || [], newComment: entry });
     });
 });
 
 app.post('/api/comments/clear', (req, res) => {
-    const user = getUserFromRequest(req);
-    return inContext({ user, room: `user:${user}`, state: stateFor(user) }, () => {
+    return inRequestContext(req, res, () => {
         auctionState.comments = [];
         emitToContext('comments-clear');
         emitToContext('comments-update', { comments: auctionState.comments });
@@ -497,8 +563,20 @@ app.post('/api/comments/clear', (req, res) => {
 
 io.use((socket, next) => {
     const user = getUserFromRequest({ headers: { cookie: socket.handshake.headers.cookie || '' } });
-    if (!user) return next(new Error('No autenticado'));
-    socket.request.user = user;
+    if (user) {
+        socket.request.user = user;
+        socket.data.readOnlyOverlay = false;
+        return next();
+    }
+
+    const overlayUser = getOverlayUser({
+        query: socket.handshake.auth || {},
+        headers: { referer: socket.handshake.headers.referer || '' }
+    });
+    if (!overlayUser) return next(new Error('No hay un panel activo para este overlay'));
+
+    socket.request.user = overlayUser;
+    socket.data.readOnlyOverlay = true;
     next();
 });
 
@@ -507,6 +585,11 @@ io.on('connection', (socket) => {
     const user = socket.request.user;
     const context = { user, room: `user:${user}`, state: stateFor(user) };
     socket.join(context.room);
+
+    if (socket.data.readOnlyOverlay) {
+        socket.use((event, next) => next(new Error('El overlay es de solo lectura')));
+    }
+
     const originalOn = socket.on.bind(socket);
     socket.on = (event, listener) => originalOn(event, (...args) => inContext(context, () => listener(...args)));
     
@@ -522,6 +605,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('set-tiktok-user', (username) => {
+        activeOverlayUser = context.user;
         if (context.tiktokConnection) {
             context.tiktokConnection.disconnect();
         }
