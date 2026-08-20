@@ -254,27 +254,48 @@
             document.documentElement.style.setProperty('--neon-bg', `rgba(${r}, ${g}, ${b}, 0.15)`);
         });
 
+        let tiktokConnectionTimeout;
+
+        function showTikTokStatus(message, color) {
+            const statusEl = document.getElementById('connection-status');
+            statusEl.textContent = message;
+            statusEl.style.background = color;
+        }
+
         document.getElementById('connect-btn').addEventListener('click', () => {
             const user = document.getElementById('tiktok-username').value.trim();
-            if (user) socket.emit('set-tiktok-user', user);
+            if (!user) return showTikTokStatus('ESCRIBE TU USUARIO DE TIKTOK', '#cc0000');
+
+            clearTimeout(tiktokConnectionTimeout);
+            showTikTokStatus('CONECTANDO: ' + user, '#d97706');
+            socket.emit('set-tiktok-user', user);
+            tiktokConnectionTimeout = setTimeout(() => {
+                showTikTokStatus('SIN RESPUESTA DEL SERVIDOR. RECARGA LA PÁGINA.', '#cc0000');
+            }, 15000);
         });
 
         socket.on('tiktok-connecting', (username) => {
-            const statusEl = document.getElementById('connection-status');
-            statusEl.textContent = 'CONECTANDO: ' + username;
-            statusEl.style.background = '#d97706';
+            showTikTokStatus('CONECTANDO: ' + username, '#d97706');
+        });
+
+        socket.on('tiktok-connected', (username) => {
+            clearTimeout(tiktokConnectionTimeout);
+            showTikTokStatus('CONECTADO: ' + username, '#4caf50');
         });
 
         socket.on('tiktok-error', (message) => {
-            const statusEl = document.getElementById('connection-status');
-            statusEl.textContent = message;
-            statusEl.style.background = '#cc0000';
+            clearTimeout(tiktokConnectionTimeout);
+            showTikTokStatus(message, '#cc0000');
         });
 
         socket.on('tiktok-disconnected', () => {
-            const statusEl = document.getElementById('connection-status');
-            statusEl.textContent = 'DESCONECTADO';
-            statusEl.style.background = '#cc0000';
+            clearTimeout(tiktokConnectionTimeout);
+            showTikTokStatus('DESCONECTADO', '#cc0000');
+        });
+
+        socket.on('connect_error', () => {
+            clearTimeout(tiktokConnectionTimeout);
+            showTikTokStatus('NO SE PUDO CONECTAR AL SERVIDOR', '#cc0000');
         });
 
         document.getElementById('confirm-delay-btn').addEventListener('click', () => {
