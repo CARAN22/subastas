@@ -70,15 +70,18 @@ const PUBLIC_OVERLAY_READ_ENDPOINTS = new Set([
 function isPublicOverlayRequest(req) {
     if (PUBLIC_OVERLAY_PAGES.has(req.path)) return true;
 
-    // Wins y comentarios son overlays por defecto; los controles siguen protegidos.
-    if (req.path === '/wins.html' || req.path === '/comments.html') {
-        return req.query.control !== '1';
-    }
+    // Los controles de wins también se usan como fuente de navegador en
+    // TikTok Live Studio, que no comparte la cookie del panel.
+    if (req.path === '/wins.html') return true;
+    if (req.path === '/comments.html') return req.query.control !== '1';
 
     // La página de batalla normal es un panel; las vistas limpias son overlays.
     if (req.path === '/battle.html') {
         return (req.query.clean === '1' || req.query.obs === '1') && req.query.control !== '1';
     }
+
+    // El panel de wins de Live Studio necesita guardar sus cambios sin cookie.
+    if (req.path === '/api/wins' && req.query.control === '1') return true;
 
     if (req.method !== 'GET') return false;
 
@@ -577,6 +580,7 @@ io.use((socket, next) => {
 
     socket.request.user = overlayUser;
     socket.data.readOnlyOverlay = true;
+    socket.data.allowWinsControl = socket.handshake.auth?.winsControl === true;
     next();
 });
 
@@ -587,7 +591,10 @@ io.on('connection', (socket) => {
     socket.join(context.room);
 
     if (socket.data.readOnlyOverlay) {
-        socket.use((event, next) => next(new Error('El overlay es de solo lectura')));
+        socket.use((event, next) => {
+            if (socket.data.allowWinsControl && event[0] === 'admin-update-wins') return next();
+            next(new Error('El overlay es de solo lectura'));
+        });
     }
 
     const originalOn = socket.on.bind(socket);
