@@ -299,20 +299,16 @@
         function chooseMaleSpanishVoice() {
             if (!('speechSynthesis' in window)) return;
             const voices = window.speechSynthesis.getVoices();
-            const isMale = (voice) => /male|hombre|jorge|diego|carlos|juan|pablo|miguel/i.test(voice.name);
-            const isFemale = (voice) => /female|mujer|monica|lucia|elvira|paulina/i.test(voice.name);
+            const voiceLabel = (voice) => `${voice.name} ${voice.voiceURI}`;
+            const isMale = (voice) => /male|hombre|gonzalo|jorge|diego|carlos|juan|pablo|miguel|andres|manuel|emilio|alvaro|javier|raul|ricardo|tomas/i.test(voiceLabel(voice));
             const isColombianSpanish = (voice) => /^es(-|_)CO$/i.test(voice.lang);
             const isLatinSpanish = (voice) => /es(-|_)(MX|419|US|AR|CL|PE)/i.test(voice.lang);
 
-            // El navegador solo puede usar las voces instaladas; se prioriza
-            // es-CO masculina y después una voz masculina latinoamericana.
+            // Gonzalo is the Microsoft Spanish (Colombia) male voice.
+            // Never use an unclassified voice: it may be a female default voice.
             selectedVoice = voices.find((voice) => isColombianSpanish(voice) && isMale(voice))
-                || voices.find((voice) => isColombianSpanish(voice) && !isFemale(voice))
                 || voices.find((voice) => isLatinSpanish(voice) && isMale(voice))
-                || voices.find((voice) => isLatinSpanish(voice) && !isFemale(voice))
-                || voices.find((voice) => /^es(-|_)/i.test(voice.lang) && /male|hombre|jorge|diego|carlos|juan|pablo|miguel/i.test(voice.name))
-                || voices.find((voice) => /^es(-|_)/i.test(voice.lang) && !/female|mujer|monica|lucia|elvira|paulina/i.test(voice.name))
-                || voices.find((voice) => /^es(-|_)/i.test(voice.lang))
+                || voices.find((voice) => /^es(-|_)/i.test(voice.lang) && isMale(voice))
                 || null;
         }
 
@@ -322,10 +318,14 @@
             const name = comment.name || comment.uniqueId || 'Usuario';
             const utterance = new SpeechSynthesisUtterance(`${name} dice: ${comment.text}`);
             utterance.lang = 'es-CO';
-            utterance.rate = 0.95;
-            utterance.pitch = 0.72;
+            utterance.rate = 0.9;
+            utterance.pitch = 0.55;
             if (!selectedVoice) chooseMaleSpanishVoice();
-            if (selectedVoice) utterance.voice = selectedVoice;
+            if (selectedVoice) {
+                utterance.voice = selectedVoice;
+            } else {
+                console.warn('No Spanish male voice is installed. Install Gonzalo (es-CO) to use a Colombian male voice.');
+            }
             window.speechSynthesis.speak(utterance);
         }
 
