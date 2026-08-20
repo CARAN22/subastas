@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OBS OVERLAY - TikTok Auction</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/page-menu.js" defer></script>
+    <style>
+        :root {
+            --neon-color: #bc13fe; 
+            --neon-glow: rgba(188, 19, 254, 0.8);
+            --neon-bg: rgba(188, 19, 254, 0.15);
+            --coin-gold: #ffd700;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Roboto, sans-serif;
+            background-color: transparent; /* TRANSPARENTE PARA OBS */
+            color: white;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        #auction-box {
+            width: 80vw; 
+            height: 80vh; 
+            max-width: 850px; 
+            max-height: 600px;
+            background-color: var(--neon-bg);
+            border: 5px solid var(--neon-color);
+            box-shadow: 0 0 40px var(--neon-glow), inset 0 0 60px var(--neon-glow);
+            border-radius: 25px;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        #header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 3px solid var(--neon-color);
+            padding-bottom: 15px;
+            margin-bottom: 25px;
+        }
+
+        #timer-display.danger {
+            color: #ff0000;
+            text-shadow: 0 0 30px #ff0000, 0 0 60px #ff0000;
+            animation: blink 0.8s infinite;
+        }
+
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
+
+        #timer-display {
+            font-size: 5rem; /* Reducido de 7rem */
+            font-weight: 900;
+            color: white;
+            text-shadow: 0 0 20px var(--neon-color), 0 0 40px var(--neon-color);
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        #stats {
+            text-align: right;
+            font-size: 1.5rem; /* Reducido de 2rem */
+            color: white;
+            text-shadow: 0 0 10px rgba(0,0,0,0.8), 0 0 20px var(--neon-color);
+            font-weight: bold;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        #stats div { background: rgba(0, 0, 0, 0.5); padding: 5px 15px; border-radius: 10px; border: 1px solid var(--neon-color); }
+
+        #participants-container {
+            flex-grow: 1;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-content: flex-start;
+            gap: 10px;
+            overflow: hidden;
+            padding: 15px;
+        }
+
+        .participant {
+            background: rgba(0, 0, 0, 0.6);
+            border: 2px solid var(--neon-color);
+            border-radius: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 0;
+            position: relative;
+            transition: all 0.3s ease;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+            overflow: hidden;
+            width: 180px;
+            height: 200px;
+        }
+
+        .participant.size-sm { width: 140px; height: 160px; }
+        .participant.size-xs { width: 100px; height: 120px; }
+        .participant.size-xxs { width: 70px; height: 90px; }
+
+        .participant img.avatar { width: 100%; height: 70%; object-fit: cover; border-bottom: 1px solid var(--neon-color); }
+        .participant-info { width: 100%; height: 30%; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.8); }
+        .participant .name { font-size: 0.8rem; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 90%; text-align: center; }
+        .size-xxs .name { font-size: 0.5rem; }
+        .participant .coins-container { display: flex; align-items: center; color: var(--coin-gold); font-weight: 900; font-size: 1rem; text-shadow: 0 0 5px rgba(255, 215, 0, 0.7); }
+        .size-xxs .coins-container { font-size: 0.6rem; }
+        .coin-img { width: 18px; height: 18px; margin-right: 4px; }
+        .size-xxs .coin-img { width: 10px; height: 10px; }
+
+        .participant.highlight { border-color: #ffffff; box-shadow: 0 0 40px #ffffff, inset 0 0 20px #ffffff; transform: scale(1.15); z-index: 50; background: rgba(255, 255, 255, 0.3); }
+        .participant.eliminating { animation: explode 0.6s forwards; }
+        @keyframes explode { 0% { transform: scale(1.15); opacity: 1; filter: brightness(2); } 100% { transform: scale(2.5); opacity: 0; filter: blur(20px) brightness(5); } }
+
+        #overlay-screen { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.8); backdrop-filter: blur(15px); z-index: 2000; display: none; justify-content: center; align-items: center; flex-direction: column; }
+        #overlay-screen.active { display: flex; }
+        .zoom-card { width: 400px; height: 500px; background: #000; border: 5px solid var(--neon-color); border-radius: 20px; overflow: hidden; display: flex; flex-direction: column; animation: zoomIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; box-shadow: 0 0 50px var(--neon-glow); }
+        .zoom-card img { width: 100%; height: 80%; object-fit: cover; }
+        .zoom-info { height: 20%; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.9); }
+        .status-text { font-size: 5rem; font-weight: 900; text-transform: uppercase; margin-top: -50px; text-shadow: 0 0 20px rgba(0,0,0,1), 0 0 40px var(--neon-color); z-index: 2100; position: relative; }
+        .status-text.winner-text { color: var(--coin-gold); text-shadow: 0 0 30px var(--coin-gold), 0 0 60px rgba(255, 215, 0, 0.5); font-size: 6rem; animation: pulse 1s infinite alternate; }
+        @keyframes pulse { from { transform: scale(1); filter: brightness(1); } to { transform: scale(1.1); filter: brightness(1.5); } }
+        @keyframes zoomIn { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+    </style>
+</head>
+<body>
+    <div id="auction-box">
+        <div id="header">
+            <div id="timer-display">00:00</div>
+            <div id="stats">
+                <div id="min-label">MÍNIMO: 100 <img src="https://p16-va.lemoncdn.com/obj/musically-maliva-obj/0b904d093510e1320158485292a18837" class="coin-img"></div>
+                <div id="count-label">PARTICIPANTES: 0</div>
+            </div>
+        </div>
+        <div id="participants-container"></div>
+    </div>
+
+    <div id="overlay-screen">
+        <div id="zoom-card-container"></div>
+        <div id="status-text-label" class="status-text"></div>
+    </div>
+
+    <script>
+        const socket = io();
+        let participants = [];
+        let timeLeft = 0;
+        let initTimeConfig = 60;
+        let timerInterval = null;
+        let isRouletteRunning = false;
+        let isAuctionActive = false;
+        let hasWinner = false;
+
+        const container = document.getElementById('participants-container');
+        const timerDisplay = document.getElementById('timer-display');
+        const countLabel = document.getElementById('count-label');
+        const minLabel = document.getElementById('min-label');
+        const overlayScreen = document.getElementById('overlay-screen');
+        const zoomCardContainer = document.getElementById('zoom-card-container');
+        const statusTextLabel = document.getElementById('status-text-label');
+
+        function changeTheme(color) {
+            document.documentElement.style.setProperty('--neon-color', color);
+            const r = parseInt(color.slice(1,3), 16);
+            const g = parseInt(color.slice(3,5), 16);
+            const b = parseInt(color.slice(5,7), 16);
+            document.documentElement.style.setProperty('--neon-glow', `rgba(${r}, ${g}, ${b}, 0.8)`);
+            document.documentElement.style.setProperty('--neon-bg', `rgba(${r}, ${g}, ${b}, 0.15)`);
+        }
+
+        socket.on('sync-state', (state) => {
+            changeTheme(state.themeColor);
+            const currentMin = state.minCoins || 100;
+            minLabel.innerHTML = `MÍNIMO: ${currentMin} <img src="https://p16-va.lemoncdn.com/obj/musically-maliva-obj/0b904d093510e1320158485292a18837" class="coin-img">`;
+        });
+
+        socket.on('update-min-broadcast', (min) => {
+            minLabel.innerHTML = `MÍNIMO: ${min} <img src="https://p16-va.lemoncdn.com/obj/musically-maliva-obj/0b904d093510e1320158485292a18837" class="coin-img">`;
+        });
+
+        socket.on('change-theme-broadcast', changeTheme);
+
+        socket.on('new-gift-event', (data) => {
+            if (!isAuctionActive || hasWinner || isRouletteRunning) return;
+            const minRequired = parseInt(minLabel.textContent.match(/\d+/)[0]);
+            if (data.totalCoins >= minRequired) {
+                addParticipant(`gift_${Date.now()}_${Math.random()}`, data.nickname, data.profilePictureUrl, data.totalCoins);
+            }
+        });
+
+        socket.on('add-participant-broadcast', (data) => {
+            addParticipant(data.id, data.name, data.photo, data.coins);
+        });
+
+        socket.on('start-auction-broadcast', (config) => {
+            initTimeConfig = config.initTime;
+            isAuctionActive = true;
+            hasWinner = false;
+            // ACTUALIZAR EL MÍNIMO VISUALMENTE
+            minLabel.innerHTML = `MÍNIMO: ${config.minCoins} <img src="https://p16-va.lemoncdn.com/obj/musically-maliva-obj/0b904d093510e1320158485292a18837" class="coin-img">`;
+            startAuction(initTimeConfig);
+        });
+
+        socket.on('clear-all-broadcast', () => {
+            participants = [];
+            container.innerHTML = "";
+            isAuctionActive = false;
+            hasWinner = false;
+            timeLeft = 0;
+            clearInterval(timerInterval);
+            updateTimerDisplay();
+            updateCount();
+        });
+
+        socket.on('force-time-broadcast', (newTime) => {
+            timeLeft = newTime;
+            updateTimerDisplay();
+        });
+
+        socket.on('trigger-elimination-broadcast', runEliminationRoulette);
+
+        function startAuction(seconds) {
+            clearInterval(timerInterval);
+            timeLeft = seconds;
+            updateTimerDisplay();
+            timerInterval = setInterval(() => {
+                if (timeLeft > 0 && !isRouletteRunning) {
+                    timeLeft--;
+                    updateTimerDisplay();
+                } else if (timeLeft <= 0 && !isRouletteRunning) {
+                    if (participants.length > 1) runEliminationRoulette();
+                    else if (participants.length === 1) checkWinner();
+                }
+            }, 1000);
+        }
+
+        function updateTimerDisplay() {
+            const m = Math.floor(timeLeft / 60);
+            const s = timeLeft % 60;
+            timerDisplay.textContent = `${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+            if (timeLeft <= 10 && timeLeft > 0) timerDisplay.classList.add('danger');
+            else timerDisplay.classList.remove('danger');
+        }
+
+        function addParticipant(id, name, photo, coins) {
+            if (hasWinner || isRouletteRunning) return;
+            const pObj = { id, name, photo, coins };
+            participants.push(pObj);
+            const div = document.createElement('div');
+            div.className = 'participant';
+            div.id = `p-${id}`;
+            div.innerHTML = `<img src="${photo}" class="avatar"><div class="participant-info"><div class="name">${name}</div><div class="coins-container"><img src="https://p16-va.lemoncdn.com/obj/musically-maliva-obj/0b904d093510e1320158485292a18837" class="coin-img"><span class="coin-amount">${coins}</span></div></div>`;
+            container.appendChild(div);
+            updateCount();
+            adjustSizes();
+        }
+
+        function adjustSizes() {
+            const count = participants.length;
+            document.querySelectorAll('.participant').forEach(card => {
+                card.classList.remove('size-sm', 'size-xs', 'size-xxs');
+                if (count > 30) card.classList.add('size-xxs');
+                else if (count > 20) card.classList.add('size-xs');
+                else if (count > 10) card.classList.add('size-sm');
+            });
+        }
+
+        function updateCount() {
+            countLabel.textContent = `PARTICIPANTES: ${participants.length}`;
+        }
+
+        function checkWinner() {
+            if (participants.length === 1 && !isRouletteRunning && !hasWinner) {
+                hasWinner = true;
+                isAuctionActive = false;
+                clearInterval(timerInterval);
+                setTimeout(() => showZoomOverlay(participants[0], "GANADOR"), 500);
+            }
+        }
+
+        async function showZoomOverlay(target, status) {
+            zoomCardContainer.innerHTML = `<div class="zoom-card" style="border-color: var(--coin-gold); box-shadow: 0 0 60px var(--coin-gold);"><img src="${target.photo}"><div class="zoom-info"><div style="font-size: 1.5rem; font-weight: bold; color: white;">${target.name}</div></div></div>`;
+            statusTextLabel.textContent = status;
+            statusTextLabel.className = 'status-text winner-text';
+            overlayScreen.classList.add('active');
+            await new Promise(r => setTimeout(r, 5000));
+            overlayScreen.classList.remove('active');
+            timerDisplay.textContent = "¡FIN!";
+        }
+
+        async function runEliminationRoulette() {
+            if (participants.length <= 1 || isRouletteRunning) return;
+            isRouletteRunning = true;
+            isAuctionActive = false;
+            const rounds = 15;
+            let currentIndex = 0;
+            for (let i = 0; i < rounds + Math.floor(Math.random() * participants.length); i++) {
+                const prevIndex = (currentIndex - 1 + participants.length) % participants.length;
+                document.getElementById(`p-${participants[prevIndex].id}`)?.classList.remove('highlight');
+                document.getElementById(`p-${participants[currentIndex].id}`)?.classList.add('highlight');
+                currentIndex = (currentIndex + 1) % participants.length;
+                await new Promise(r => setTimeout(r, 80 + (i * 15)));
+            }
+            const finalIndex = (currentIndex - 1 + participants.length) % participants.length;
+            const target = participants[finalIndex];
+            const el = document.getElementById(`p-${target.id}`);
+            if (el) {
+                el.classList.add('eliminating');
+                setTimeout(() => {
+                    participants.splice(finalIndex, 1);
+                    el.remove();
+                    isRouletteRunning = false;
+                    updateCount();
+                    checkWinner();
+                    adjustSizes();
+                    if (participants.length > 1) {
+                        timeLeft = initTimeConfig;
+                        updateTimerDisplay();
+                        isAuctionActive = true;
+                        startAuction(timeLeft);
+                    }
+                }, 600);
+            }
+        }
+    </script>
+</body>
+</html>

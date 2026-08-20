@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Batalla Rosa vs GG</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/page-menu.js" defer></script>
+    <style>
+        :root {
+            --enemy: #ff2f7d;
+            --enemy-soft: rgba(255, 47, 125, 0.18);
+            --hero: #2dffbd;
+            --hero-soft: rgba(45, 255, 189, 0.18);
+            --cyan: #27d9ff;
+            --gold: #ffd86b;
+            --danger: #ff385f;
+            --ink: #070a12;
+            --panel: rgba(4, 7, 18, 0.84);
+            --line: rgba(255, 255, 255, 0.22);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            overflow: hidden;
+            background:
+                radial-gradient(circle at top, rgba(39, 217, 255, 0.18), transparent 34%),
+                linear-gradient(180deg, rgba(5, 8, 22, 0.74), rgba(0, 0, 0, 0.2));
+            color: #fff;
+            font-family: "Segoe UI", Roboto, Arial, sans-serif;
+        }
+
+        .battle-stage {
+            width: 100vw;
+            min-height: 100vh;
+            display: grid;
+            align-items: start;
+            justify-items: center;
+            padding: 18px;
+            pointer-events: none;
+        }
+
+        .battle-overlay {
+            width: min(1180px, calc(100vw - 28px));
+            display: grid;
+            gap: 12px;
+            padding: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 8px;
+            background: linear-gradient(135deg, rgba(6, 9, 24, 0.88), rgba(17, 12, 28, 0.78));
+            box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42), inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+            backdrop-filter: blur(8px);
+        }
+
+        .battle-top {
+            display: grid;
+            grid-template-columns: minmax(220px, 1fr) minmax(160px, 240px) minmax(220px, 1fr);
+            gap: 12px;
+            align-items: stretch;
+        }
+
+        .team {
+            min-height: 150px;
+            display: grid;
+            grid-template-columns: 126px 1fr;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.34);
+            overflow: hidden;
+        }
+
+        .team.enemy {
+            border-color: rgba(255, 47, 125, 0.55);
+            box-shadow: inset 0 0 30px var(--enemy-soft);
+        }
+
+        .team.hero {
+            direction: rtl;
+            border-color: rgba(45, 255, 189, 0.55);
+            box-shadow: inset 0 0 30px var(--hero-soft);
+        }
+
+        .team.hero .team-copy {
+            direction: ltr;
+            text-align: right;
+        }
+
+        .asset {
+            width: 126px;
+            aspect-ratio: 1;
+            display: grid;
+            place-items: center;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            background: rgba(255, 255, 255, 0.08);
+            overflow: hidden;
+        }
+
+        .asset img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            filter: drop-shadow(0 0 18px rgba(255, 255, 255, 0.22));
+        }
+
+        .gift-carousel {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+
+        .gift-slide {
+            position: absolute;
+            inset: 0;
+            display: grid;
+            grid-template-rows: 1fr auto;
+            gap: 3px;
+            place-items: center;
+            padding: 8px 6px;
+            opacity: 0;
+            transform: scale(0.92);
+            transition: opacity 220ms ease, transform 220ms ease;
+        }
+
+        .gift-slide.active {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        .gift-slide img {
+            min-width: 0;
+            min-height: 0;
+            object-fit: contain;
+        }
+
+        .gift-chip {
+            max-width: 100%;
+            display: grid;
+            gap: 1px;
+            text-align: center;
+            text-transform: uppercase;
+        }
+
+        .gift-chip span {
+            overflow: hidden;
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 0.58rem;
+            font-weight: 1000;
+            line-height: 1.05;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .gift-chip b {
+            color: var(--gold);
+            font-size: 0.66rem;
+            line-height: 1;
+        }
+
+        .fallback-asset {
+            width: 100%;
+            height: 100%;
+            display: grid;
+            place-items: center;
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 2rem;
+            font-weight: 1000;
+            letter-spacing: 0;
+        }
+
+        .fallback-asset.enemy-fallback {
+            background: linear-gradient(135deg, rgba(255, 47, 125, 0.38), rgba(255, 216, 107, 0.16));
+        }
+
+        .fallback-asset.hero-fallback {
+            background: linear-gradient(135deg, rgba(45, 255, 189, 0.34), rgba(39, 217, 255, 0.16));
+        }
+
+        .team-copy {
+            min-width: 0;
+            display: grid;
+            gap: 8px;
+        }
+
+        .team-label {
+            min-width: 0;
+            color: rgba(255, 255, 255, 0.74);
+            font-size: clamp(0.9rem, 1.6vw, 1.2rem);
+            font-weight: 1000;
+            line-height: 1;
+            text-transform: uppercase;
+            overflow-wrap: anywhere;
+        }
+
+        .score {
+            min-width: 0;
+            font-size: clamp(3.4rem, 8vw, 7rem);
+            font-weight: 1000;
+            line-height: 0.82;
+            letter-spacing: 0;
+        }
+
+        .team.enemy .score {
+            color: var(--enemy);
+            text-shadow: 0 0 24px rgba(255, 47, 125, 0.45);
+        }
+
+        .team.hero .score {
+            color: var(--hero);
+            text-shadow: 0 0 24px rgba(45, 255, 189, 0.42);
+        }
+
+        .gift-match {
+            min-height: 20px;
+            color: rgba(255, 255, 255, 0.62);
+            font-size: 0.82rem;
+            font-weight: 900;
+            text-transform: uppercase;
+            overflow-wrap: anywhere;
+        }
+
+        .gift-list {
+            display: grid;
+            gap: 5px;
+            padding: 8px;
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .gift-list-row {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 8px;
+            color: rgba(255, 255, 255, 0.84);
+            font-size: 0.74rem;
+            font-weight: 900;
+            text-transform: uppercase;
+        }
+
+        .gift-list-row b {
+            color: var(--gold);
+        }
+
+        .timer-box {
+            min-height: 150px;
+            display: grid;
+            place-items: center;
+            align-content: center;
+            gap: 6px;
+            padding: 12px;
+            border: 1px solid rgba(39, 217, 255, 0.48);
+            border-radius: 8px;
+            background: rgba(3, 8, 20, 0.72);
+            box-shadow: inset 0 0 34px rgba(39, 217, 255, 0.13);
+        }
+
+        .timer-title {
+            color: var(--gold);
+            font-size: 0.82rem;
+            font-weight: 1000;
+            text-transform: uppercase;
+        }
+
+        #battle-timer {
+            min-width: 118px;
+            color: #fff;
+            font-family: "Consolas", "Courier New", monospace;
+            font-size: clamp(4rem, 9vw, 7rem);
+            font-weight: 1000;
+            line-height: 0.9;
+            text-align: center;
+            text-shadow: 0 0 24px rgba(39, 217, 255, 0.5);
+            font-variant-numeric: tabular-nums;
+        }
+
+        #battle-timer.danger {
+            color: var(--danger);
+            animation: timer-pop 520ms ease-in-out infinite alternate;
+            text-shadow: 0 0 28px rgba(255, 56, 95, 0.72);
+        }
+
+        @keyframes timer-pop {
+            from { transform: scale(1); }
+            to { transform: scale(1.08); }
+        }
+
+        #battle-status {
+            min-height: 22px;
+            color: rgba(255, 255, 255, 0.78);
+            font-size: 0.84rem;
+            font-weight: 900;
+            text-align: center;
+            text-transform: uppercase;
+        }
+
+        .bar-shell {
+            display: grid;
+            gap: 8px;
+        }
+
+        .bar-meta {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.78rem;
+            font-weight: 1000;
+            text-transform: uppercase;
+        }
+
+        .battle-bar {
+            position: relative;
+            height: clamp(44px, 7vw, 64px);
+            overflow: hidden;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.28);
+            background:
+                linear-gradient(90deg, rgba(255, 47, 125, 0.18), rgba(255, 255, 255, 0.08), rgba(45, 255, 189, 0.18)),
+                rgba(255, 255, 255, 0.08);
+        }
+
+        .bar-fill {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 50%;
+            transition: width 260ms ease;
+        }
+
+        #enemy-fill {
+            left: 0;
+            background: linear-gradient(90deg, #a3003f, var(--enemy));
+            box-shadow: 0 0 22px rgba(255, 47, 125, 0.5);
+        }
+
+        #hero-fill {
+            right: 0;
+            background: linear-gradient(90deg, var(--hero), #00b7ff);
+            box-shadow: 0 0 22px rgba(45, 255, 189, 0.48);
+        }
+
+        #balance-marker {
+            position: absolute;
+            top: -3px;
+            bottom: -3px;
+            left: 50%;
+            width: 4px;
+            border-radius: 999px;
+            background: #fff;
+            box-shadow: 0 0 16px rgba(255, 255, 255, 0.8);
+            transform: translateX(-50%);
+            transition: left 260ms ease;
+        }
+
+        .last-action {
+            min-height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 6px 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            background: rgba(0, 0, 0, 0.28);
+            color: rgba(255, 255, 255, 0.8);
+            font-size: clamp(0.9rem, 1.8vw, 1.16rem);
+            font-weight: 1000;
+            text-align: center;
+            text-transform: uppercase;
+            overflow-wrap: anywhere;
+        }
+
+        .battle-overlay.flash-enemy .team.enemy,
+        .battle-overlay.flash-hero .team.hero {
+            animation: team-hit 520ms ease;
+        }
+
+        @keyframes team-hit {
+            0% { transform: scale(1); filter: brightness(1); }
+            40% { transform: scale(1.03); filter: brightness(1.35); }
+            100% { transform: scale(1); filter: brightness(1); }
+        }
+
+        .controls {
+            position: fixed;
+            left: 16px;
+            bottom: 16px;
+            width: min(390px, calc(100vw - 32px));
+            max-height: calc(100vh - 32px);
+            overflow: auto;
+            display: grid;
+            gap: 10px;
+            padding: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.24);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.9);
+            box-shadow: 0 0 30px rgba(0, 0, 0, 0.72);
+        }
+
+        .controls h1 {
+            margin: 0;
+            color: #fff;
+            font-size: 1rem;
+            font-weight: 1000;
+            text-transform: uppercase;
+        }
+
+        .control-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .field {
+            display: grid;
+            gap: 5px;
+        }
+
+        .field.wide {
+            grid-column: 1 / -1;
+        }
+
+        label {
+            color: rgba(255, 255, 255, 0.72);
+            font-size: 0.72rem;
+            font-weight: 1000;
+            text-transform: uppercase;
+        }
+
+        input {
+            width: 100%;
+            min-height: 36px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            background: #101421;
+            color: #fff;
+            padding: 8px 9px;
+            font: inherit;
+            font-size: 0.9rem;
+            font-weight: 800;
+        }
+
+        .button-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        button,
+        .control-link {
+            min-height: 38px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 0;
+            border-radius: 6px;
+            color: #071018;
+            cursor: pointer;
+            font: inherit;
+            font-size: 0.78rem;
+            font-weight: 1000;
+            text-align: center;
+            text-decoration: none;
+            text-transform: uppercase;
+        }
+
+        .primary { background: var(--cyan); }
+        .enemy-btn { background: var(--enemy); color: #fff; }
+        .hero-btn { background: var(--hero); }
+        .gold { background: var(--gold); }
+        .muted { background: #252b3d; color: #fff; }
+        .danger-btn { background: var(--danger); color: #fff; }
+
+        #connection-status {
+            min-height: 28px;
+            display: grid;
+            place-items: center;
+            border-radius: 6px;
+            background: #2c3140;
+            color: rgba(255, 255, 255, 0.82);
+            font-size: 0.74rem;
+            font-weight: 1000;
+            text-transform: uppercase;
+        }
+
+        body.clean .controls {
+            display: none;
+        }
+
+        @media (max-width: 820px) {
+            body {
+                overflow: auto;
+            }
+
+            .battle-stage {
+                padding: 10px;
+            }
+
+            .battle-top {
+                grid-template-columns: 1fr;
+            }
+
+            .team,
+            .team.hero {
+                direction: ltr;
+                grid-template-columns: 96px 1fr;
+                min-height: 112px;
+            }
+
+            .team.hero .team-copy {
+                text-align: left;
+            }
+
+            .asset {
+                width: 96px;
+            }
+
+            .timer-box {
+                min-height: 120px;
+            }
+
+            .controls {
+                left: 10px;
+                bottom: 10px;
+                width: calc(100vw - 20px);
+            }
+        }
+    </style>
+</head>
+<body>
+    <main class="battle-stage">
+        <section class="battle-overlay" id="battle-overlay" aria-label="Overlay de batalla">
+            <div class="battle-top">
+                <article class="team enemy" id="enemy-team">
+                    <div class="asset">
+                        <div class="gift-carousel" id="enemy-carousel"></div>
+                    </div>
+                    <div class="team-copy">
+                        <div class="team-label" id="enemy-label">ENEMIGOS</div>
+                        <div class="score" id="enemy-score">0</div>
+                        <div class="gift-match" id="enemy-match">6 regalos enemigos</div>
+                    </div>
+                </article>
+
+                <div class="timer-box" aria-label="Tiempo de batalla">
+                    <div class="timer-title">Batalla</div>
+                    <div id="battle-timer">60</div>
+                    <div id="battle-status">Esperando regalos</div>
+                </div>
+
+                <article class="team hero" id="hero-team">
+                    <div class="asset">
+                        <div class="gift-carousel" id="hero-carousel"></div>
+                    </div>
+                    <div class="team-copy">
+                        <div class="team-label" id="hero-label">HEROES</div>
+                        <div class="score" id="hero-score">0</div>
+                        <div class="gift-match" id="hero-match">6 regalos heroes</div>
+                    </div>
+                </article>
+            </div>
+
+            <div class="bar-shell">
+                <div class="bar-meta">
+                    <span id="enemy-percent">50%</span>
+                    <span id="hero-percent">50%</span>
+                </div>
+                <div class="battle-bar" aria-hidden="true">
+                    <div class="bar-fill" id="enemy-fill"></div>
+                    <div class="bar-fill" id="hero-fill"></div>
+                    <div id="balance-marker"></div>
+                </div>
+            </div>
+
+            <div class="last-action" id="last-action">Regalos enemigos arrancan tiempo | heroes solo suman</div>
+        </section>
+    </main>
+
+    <aside class="controls" aria-label="Controles de batalla">
+        <h1>Control batalla</h1>
+
+        <div class="field">
+            <label for="tiktok-username">Usuario TikTok</label>
+            <input id="tiktok-username" type="text" placeholder="sin @">
+        </div>
+        <div class="button-row">
+            <button class="primary" id="connect-btn" type="button">Conectar</button>
+            <div id="connection-status">Desconectado</div>
+        </div>
+
+        <div class="control-grid">
+            <div class="field">
+                <label for="round-seconds">Tiempo batalla</label>
+                <input id="round-seconds" type="number" min="1" value="60">
+            </div>
+            <div class="field">
+                <label for="slow-final-ms">2 a 1 lento ms</label>
+                <input id="slow-final-ms" type="number" min="1000" step="100" value="1800">
+            </div>
+            <div class="field wide">
+                <label>Regalos enemigos</label>
+                <div class="gift-list" id="enemy-gift-list"></div>
+            </div>
+            <div class="field wide">
+                <label>Regalos heroes</label>
+                <div class="gift-list" id="hero-gift-list"></div>
+            </div>
+        </div>
+
+        <button class="primary" id="save-config-btn" type="button">Guardar config</button>
+
+        <div class="field">
+            <label for="test-count">Cantidad test</label>
+            <input id="test-count" type="number" min="1" value="1">
+        </div>
+        <div class="button-row">
+            <button class="enemy-btn" id="test-enemy-btn" type="button">Test enemigo</button>
+            <button class="hero-btn" id="test-hero-btn" type="button">Test heroe</button>
+        </div>
+        <div class="button-row">
+            <button class="gold" id="start-timer-btn" type="button">Iniciar timer</button>
+            <button class="muted" id="stop-timer-btn" type="button">Pausar</button>
+        </div>
+        <div class="button-row">
+            <button class="danger-btn" id="reset-btn" type="button">Reset</button>
+            <button class="muted" id="hide-btn" type="button">Ocultar</button>
+        </div>
+        <div class="button-row">
+            <a class="control-link muted" href="/battle-overlay.html" target="_blank" rel="noopener">Live Studio</a>
+            <a class="control-link muted" href="/battle.html?control=1" target="_blank" rel="noopener">Control</a>
+        </div>
+    </aside>
+
+    <script>
+        const socket = io();
+        const params = new URLSearchParams(window.location.search);
+        const isClean = params.get('clean') === '1' || params.get('obs') === '1';
+        const isControl = params.get('control') === '1' || !isClean;
+
+        const defaultEnemyGifts = [
+            { name: 'Corazon coreano', coins: 5, image: '/gift-images/Coraz%C3%B3n%20Coreano.png' },
+            { name: 'Rosa grande', coins: 10, image: '/gift-images/Rosa%20Grande.png' },
+            { name: 'Rosquilla', coins: 30, image: '/gift-images/Dona.png' },
+            { name: 'Control', coins: 100, image: '/gift-images/Control.png' },
+            { name: 'Pistola de dinero', coins: 500, image: '/gift-images/Pistola%20de%20Diamantes.png' },
+            { name: 'Galaxia', coins: 1000, image: '/gift-images/Galaxia.png' }
+        ];
+
+        const defaultHeroGifts = [
+            { name: 'Fuegos artificiales', coins: 5, image: '/gift-images/Fuegos%20Artificiales.png' },
+            { name: 'Corazon', coins: 10, image: '/gift-images/Coraz%C3%B3n.png' },
+            { name: 'Capibara', coins: 30, image: '/gift-images/Capibara.png' },
+            { name: 'Super GG', coins: 100, image: '/gift-images/GG.png' },
+            { name: 'Inmersion en tu musica', coins: 500, image: '/gift-images/M%C3%BAsica%20agradable.png' },
+            { name: 'Sandia enamorada', coins: 1000, image: '/gift-images/Sand%C3%ADa%20enamorada.png' }
+        ];
+
+        const defaults = {
+            heroScore: 0,
+            enemyScore: 0,
+            heroLabel: 'HEROES',
+            enemyLabel: 'ENEMIGOS',
+            heroGifts: defaultHeroGifts,
+            enemyGifts: defaultEnemyGifts,
+            roundSeconds: 60,
+            slowFinalMs: 1800,
+            timerDuration: 60,
+            timerStartedAt: 0,
+            timerRunning: false,
+            lastSide: '',
+            lastGiftName: '',
+            lastGiftImage: '',
+            lastGiftCoins: 0,
+            lastDonor: '',
+            lastAmount: 0,
+            lastEventId: 0
+        };
+
+        let battle = { ...defaults };
+        let serverOffsetMs = 0;
+        let seenEventId = 0;
+        let flashTimer = null;
+        let carouselIndex = 0;
+
+        const els = {
+            overlay: document.getElementById('battle-overlay'),
+            enemyCarousel: document.getElementById('enemy-carousel'),
+            heroCarousel: document.getElementById('hero-carousel'),
+            enemyLabel: document.getElementById('enemy-label'),
+            heroLabel: document.getElementById('hero-label'),
+            enemyScore: document.getElementById('enemy-score'),
+            heroScore: document.getElementById('hero-score'),
+            enemyMatch: document.getElementById('enemy-match'),
+            heroMatch: document.getElementById('hero-match'),
+            enemyFill: document.getElementById('enemy-fill'),
+            heroFill: document.getElementById('hero-fill'),
+            marker: document.getElementById('balance-marker'),
+            enemyPercent: document.getElementById('enemy-percent'),
+            heroPercent: document.getElementById('hero-percent'),
+            timer: document.getElementById('battle-timer'),
+            status: document.getElementById('battle-status'),
+            lastAction: document.getElementById('last-action'),
+            connectionStatus: document.getElementById('connection-status'),
+            tiktokUsername: document.getElementById('tiktok-username'),
+            roundSeconds: document.getElementById('round-seconds'),
+            slowFinalMs: document.getElementById('slow-final-ms'),
+            enemyGiftList: document.getElementById('enemy-gift-list'),
+            heroGiftList: document.getElementById('hero-gift-list'),
+            testCount: document.getElementById('test-count')
+        };
+
+        if (isClean) {
+            document.body.classList.add('clean');
+        }
+
+        function numberFromInput(input, fallback) {
+            const parsed = parseInt(input.value, 10);
+            return Number.isFinite(parsed) ? parsed : fallback;
+        }
+
+        function serverNow() {
+            return Date.now() + serverOffsetMs;
+        }
+
+        function readConfig() {
+            return {
+                roundSeconds: Math.max(1, numberFromInput(els.roundSeconds, defaults.roundSeconds)),
+                slowFinalMs: Math.max(1000, numberFromInput(els.slowFinalMs, defaults.slowFinalMs)),
+                enemyLabel: defaults.enemyLabel,
+                heroLabel: defaults.heroLabel
+            };
+        }
+
+        function fillControls() {
+            if (!isControl) return;
+
+            els.roundSeconds.value = battle.roundSeconds;
+            els.slowFinalMs.value = battle.slowFinalMs;
+        }
+
+        function giftList(gifts) {
+            return Array.isArray(gifts) && gifts.length ? gifts : [];
+        }
+
+        function giftSignature(gifts) {
+            return giftList(gifts).map((gift) => `${gift.name}:${gift.coins}:${gift.image}`).join('|');
+        }
+
+        function renderCarousel(container, gifts, fallbackText) {
+            const safeGifts = giftList(gifts);
+            const signature = giftSignature(safeGifts);
+
+            if (container.dataset.signature !== signature) {
+                container.dataset.signature = signature;
+                container.innerHTML = safeGifts.length
+                    ? safeGifts.map((gift) => `
+                        <div class="gift-slide">
+                            <img src="${gift.image}" alt="${gift.name}" onerror="this.hidden=true">
+                            <div class="gift-chip">
+                                <span>${gift.name}</span>
+                                <b>${gift.coins}</b>
+                            </div>
+                        </div>
+                    `).join('')
+                    : `<div class="fallback-asset">${fallbackText}</div>`;
+            }
+
+            const slides = [...container.querySelectorAll('.gift-slide')];
+            if (!slides.length) return;
+
+            const activeIndex = carouselIndex % slides.length;
+            slides.forEach((slide, index) => {
+                slide.classList.toggle('active', index === activeIndex);
+            });
+        }
+
+        function renderGiftList(container, gifts) {
+            const safeGifts = giftList(gifts);
+            const signature = giftSignature(safeGifts);
+            if (container.dataset.signature === signature) return;
+
+            container.dataset.signature = signature;
+            container.innerHTML = safeGifts.map((gift) => `
+                <div class="gift-list-row">
+                    <span>${gift.name}</span>
+                    <b>${gift.coins}</b>
+                </div>
+            `).join('');
+        }
+
+        function getTimeLeft() {
+            const duration = Math.max(1, parseInt(battle.timerDuration || battle.roundSeconds, 10) || defaults.roundSeconds);
+            const slow = Math.max(1000, parseInt(battle.slowFinalMs, 10) || defaults.slowFinalMs);
+
+            if (!battle.timerRunning || !battle.timerStartedAt) {
+                return duration;
+            }
+
+            const elapsed = Math.max(0, serverNow() - battle.timerStartedAt);
+            const normalSeconds = Math.max(0, duration - 2);
+            const normalMs = normalSeconds * 1000;
+            const finalMs = duration === 1 ? slow : slow * 2;
+            const totalMs = normalMs + finalMs;
+
+            if (elapsed >= totalMs) return 0;
+            if (duration === 1) return 1;
+            if (elapsed < normalMs) return duration - Math.floor(elapsed / 1000);
+
+            const finalElapsed = elapsed - normalMs;
+            return finalElapsed < slow ? 2 : 1;
+        }
+
+        function resultText(timeLeft) {
+            const total = battle.heroScore + battle.enemyScore;
+            if (!total) return 'Esperando regalos';
+
+            if (timeLeft > 0 && battle.lastSide) {
+                const team = battle.lastSide === 'hero' ? battle.heroLabel : battle.enemyLabel;
+                return `${team} +${battle.lastAmount}`;
+            }
+
+            if (battle.heroScore === battle.enemyScore) return 'Empate';
+            return battle.heroScore > battle.enemyScore ? `${battle.heroLabel} dominan` : `${battle.enemyLabel} dominan`;
+        }
+
+        function renderScores() {
+            const total = battle.heroScore + battle.enemyScore;
+            const heroPercent = total > 0 ? Math.round((battle.heroScore / total) * 100) : 50;
+            const enemyPercent = 100 - heroPercent;
+
+            els.enemyLabel.textContent = battle.enemyLabel;
+            els.heroLabel.textContent = battle.heroLabel;
+            els.enemyScore.textContent = battle.enemyScore;
+            els.heroScore.textContent = battle.heroScore;
+            els.enemyMatch.textContent = `${giftList(battle.enemyGifts).length} regalos enemigos`;
+            els.heroMatch.textContent = `${giftList(battle.heroGifts).length} regalos heroes`;
+            els.enemyFill.style.width = `${enemyPercent}%`;
+            els.heroFill.style.width = `${heroPercent}%`;
+            els.marker.style.left = `${enemyPercent}%`;
+            els.enemyPercent.textContent = `${enemyPercent}%`;
+            els.heroPercent.textContent = `${heroPercent}%`;
+            els.lastAction.textContent = battle.lastSide
+                ? `${battle.lastDonor}: ${battle.lastGiftName} (${battle.lastGiftCoins || battle.lastAmount}) +${battle.lastAmount}`
+                : 'Regalos enemigos arrancan tiempo | heroes solo suman';
+
+            renderCarousel(els.enemyCarousel, battle.enemyGifts, 'ENEMIGOS');
+            renderCarousel(els.heroCarousel, battle.heroGifts, 'HEROES');
+            renderGiftList(els.enemyGiftList, battle.enemyGifts);
+            renderGiftList(els.heroGiftList, battle.heroGifts);
+        }
+
+        function renderTimer() {
+            const timeLeft = getTimeLeft();
+            els.timer.textContent = String(timeLeft);
+            els.timer.classList.toggle('danger', timeLeft > 0 && timeLeft <= 2);
+            els.status.textContent = resultText(timeLeft);
+        }
+
+        function flashSide(side) {
+            if (!side) return;
+            clearTimeout(flashTimer);
+            els.overlay.classList.remove('flash-enemy', 'flash-hero');
+            void els.overlay.offsetWidth;
+            els.overlay.classList.add(side === 'hero' ? 'flash-hero' : 'flash-enemy');
+            flashTimer = setTimeout(() => {
+                els.overlay.classList.remove('flash-enemy', 'flash-hero');
+            }, 560);
+        }
+
+        function applyState(next) {
+            if (!next) return;
+            battle = { ...battle, ...next };
+
+            if (Number.isFinite(next.serverNow)) {
+                serverOffsetMs = next.serverNow - Date.now();
+            }
+
+            renderScores();
+            renderTimer();
+            fillControls();
+
+            if (battle.lastEventId && battle.lastEventId !== seenEventId) {
+                seenEventId = battle.lastEventId;
+                flashSide(battle.lastSide);
+            }
+        }
+
+        async function fetchBattle() {
+            try {
+                const response = await fetch(`/api/battle?t=${Date.now()}`, { cache: 'no-store' });
+                if (!response.ok) return;
+                applyState(await response.json());
+            } catch {
+                // The socket update will keep trying while the local server is available.
+            }
+        }
+
+        async function postJson(url, body) {
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body || {}),
+                    cache: 'no-store'
+                });
+                if (response.ok) applyState(await response.json());
+            } catch {
+                // Socket controls still work when fetch is delayed by the browser.
+            }
+        }
+
+        function setConnectionStatus(connected, username) {
+            els.connectionStatus.textContent = connected ? `Conectado ${username || ''}` : 'Desconectado';
+            els.connectionStatus.style.background = connected ? '#148c55' : '#2c3140';
+        }
+
+        document.getElementById('save-config-btn').addEventListener('click', () => {
+            postJson('/api/battle/config', readConfig());
+        });
+
+        document.getElementById('connect-btn').addEventListener('click', () => {
+            const username = els.tiktokUsername.value.trim();
+            if (username) socket.emit('set-tiktok-user', username);
+        });
+
+        document.getElementById('test-enemy-btn').addEventListener('click', () => {
+            const gifts = giftList(battle.enemyGifts);
+            const giftIndex = gifts.length ? carouselIndex % gifts.length : 0;
+            socket.emit('admin-battle-test-gift', {
+                side: 'enemy',
+                repeatCount: Math.max(1, numberFromInput(els.testCount, 1)),
+                giftIndex
+            });
+        });
+
+        document.getElementById('test-hero-btn').addEventListener('click', () => {
+            const gifts = giftList(battle.heroGifts);
+            const giftIndex = gifts.length ? carouselIndex % gifts.length : 0;
+            socket.emit('admin-battle-test-gift', {
+                side: 'hero',
+                repeatCount: Math.max(1, numberFromInput(els.testCount, 1)),
+                giftIndex
+            });
+        });
+
+        document.getElementById('start-timer-btn').addEventListener('click', () => {
+            socket.emit('admin-battle-start-timer', Math.max(1, numberFromInput(els.roundSeconds, battle.roundSeconds)));
+        });
+
+        document.getElementById('stop-timer-btn').addEventListener('click', () => {
+            socket.emit('admin-battle-stop-timer');
+        });
+
+        document.getElementById('reset-btn').addEventListener('click', () => {
+            postJson('/api/battle/reset');
+        });
+
+        document.getElementById('hide-btn').addEventListener('click', () => {
+            document.body.classList.toggle('clean');
+        });
+
+        socket.on('connect', fetchBattle);
+        socket.on('battle-state-update', applyState);
+        socket.on('sync-state', (state) => {
+            if (state.battle) applyState({ ...state.battle, serverNow: Date.now() });
+            setConnectionStatus(Boolean(state.isConnected), state.tiktokUser);
+        });
+        socket.on('tiktok-connected', (username) => setConnectionStatus(true, username));
+        socket.on('tiktok-disconnected', () => setConnectionStatus(false));
+
+        setInterval(renderTimer, 120);
+        setInterval(() => {
+            carouselIndex += 1;
+            renderScores();
+        }, 1700);
+        setInterval(fetchBattle, isControl ? 3000 : 1500);
+        applyState(defaults);
+        fetchBattle();
+    </script>
+</body>
+</html>

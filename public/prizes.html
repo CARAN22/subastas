@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Overlay premios live</title>
+    <script src="/page-menu.js" defer></script>
+    <style>
+        :root {
+            --pink: #ff3ca6;
+            --cyan: #28f4ff;
+            --gold: #ffd76a;
+            --green: #58ff9a;
+            --red: #ff4d6d;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            overflow: hidden;
+            background: transparent;
+            color: #fff;
+            font-family: "Segoe UI", Roboto, Arial, sans-serif;
+        }
+
+        .prize-overlay {
+            width: 100vw;
+            min-height: 100vh;
+            display: grid;
+            grid-template-columns: minmax(150px, 220px) minmax(150px, 220px);
+            align-content: center;
+            justify-content: space-between;
+            gap: clamp(14px, 4vw, 56px);
+            padding: clamp(10px, 3vw, 34px);
+        }
+
+        .prize-column {
+            display: grid;
+            gap: clamp(8px, 1.6vw, 16px);
+        }
+
+        .right-side {
+            justify-self: end;
+        }
+
+        .prize-card {
+            position: relative;
+            min-height: 78px;
+            display: grid;
+            grid-template-columns: 54px 1fr;
+            align-items: center;
+            gap: 10px;
+            padding: 9px 11px 9px 9px;
+            border: 1px solid rgba(255, 255, 255, 0.34);
+            border-radius: 8px;
+            background: linear-gradient(135deg, rgba(7, 9, 28, 0.88), rgba(23, 12, 36, 0.72));
+            box-shadow: 0 0 18px rgba(40, 244, 255, 0.18), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(8px);
+        }
+
+        .prize-card::before {
+            content: "";
+            position: absolute;
+            inset: -1px;
+            border-radius: inherit;
+            pointer-events: none;
+            opacity: 0.85;
+            background: linear-gradient(135deg, rgba(255, 60, 166, 0.28), rgba(40, 244, 255, 0.2), transparent 60%);
+            z-index: -1;
+        }
+
+        .prize-card.hot {
+            border-color: rgba(255, 215, 106, 0.76);
+            box-shadow: 0 0 22px rgba(255, 215, 106, 0.26), 0 0 18px rgba(255, 60, 166, 0.16), inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+        }
+
+        .gift-icon {
+            width: 54px;
+            height: 54px;
+            display: grid;
+            place-items: center;
+            border-radius: 50%;
+            font-size: 1.85rem;
+            line-height: 1;
+            background: radial-gradient(circle at 35% 28%, rgba(255, 255, 255, 0.86), transparent 17%), linear-gradient(135deg, rgba(255, 60, 166, 0.95), rgba(40, 244, 255, 0.8));
+            box-shadow: 0 0 16px rgba(255, 60, 166, 0.45), inset 0 -8px 18px rgba(0, 0, 0, 0.22);
+        }
+
+        .gift-icon.galaxy {
+            background: radial-gradient(circle at 34% 27%, #fff 0 4%, transparent 5%), radial-gradient(circle at 64% 67%, #fff 0 3%, transparent 4%), radial-gradient(circle at 72% 28%, #ffe082 0 3%, transparent 4%), conic-gradient(from 20deg, #5a2bff, #ff3ca6, #28f4ff, #5a2bff);
+            box-shadow: 0 0 22px rgba(143, 80, 255, 0.78);
+        }
+
+        .gift-icon.money {
+            background: radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.88), transparent 16%), linear-gradient(135deg, #16d66b, #2bffb3 48%, #0fa464);
+            box-shadow: 0 0 18px rgba(88, 255, 154, 0.55);
+        }
+
+        .gift-icon.gold {
+            background: radial-gradient(circle at 35% 25%, rgba(255, 255, 255, 0.92), transparent 16%), linear-gradient(135deg, #fff176, #ffb300 48%, #ff6d00);
+            box-shadow: 0 0 18px rgba(255, 215, 106, 0.6);
+        }
+
+        .gift-icon.red {
+            background: radial-gradient(circle at 35% 25%, rgba(255, 255, 255, 0.86), transparent 16%), linear-gradient(135deg, #ff4d6d, #ff1744 50%, #9c1026);
+            box-shadow: 0 0 18px rgba(255, 77, 109, 0.58);
+        }
+
+        .gift-copy {
+            min-width: 0;
+            display: grid;
+            gap: 4px;
+        }
+
+        .gift-name {
+            color: rgba(255, 255, 255, 0.78);
+            font-size: clamp(0.58rem, 1.2vw, 0.72rem);
+            font-weight: 900;
+            line-height: 1;
+            text-transform: uppercase;
+        }
+
+        .gift-action {
+            font-size: clamp(0.9rem, 2.2vw, 1.18rem);
+            font-weight: 1000;
+            line-height: 1.04;
+            text-transform: uppercase;
+            text-shadow: 0 0 12px rgba(255, 255, 255, 0.36);
+        }
+
+        .gift-action.negative {
+            color: var(--red);
+            text-shadow: 0 0 12px rgba(255, 77, 109, 0.62);
+        }
+
+        .gift-action.positive {
+            color: var(--green);
+            text-shadow: 0 0 12px rgba(88, 255, 154, 0.58);
+        }
+
+        .gift-cost {
+            position: absolute;
+            top: -8px;
+            right: 8px;
+            min-width: 46px;
+            height: 20px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 8px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 215, 106, 0.86);
+            background: rgba(9, 8, 18, 0.92);
+            color: var(--gold);
+            font-size: 0.67rem;
+            font-weight: 1000;
+            box-shadow: 0 0 12px rgba(255, 215, 106, 0.32);
+        }
+
+        @media (max-width: 620px) {
+            .prize-overlay {
+                grid-template-columns: 1fr 1fr;
+                align-content: start;
+                padding: 10px;
+            }
+
+            .prize-card {
+                grid-template-columns: 44px 1fr;
+                min-height: 68px;
+                gap: 8px;
+                padding: 8px;
+            }
+
+            .gift-icon {
+                width: 44px;
+                height: 44px;
+                font-size: 1.45rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <main class="prize-overlay" aria-label="Overlay de premios del live">
+        <section class="prize-column left-side" aria-label="Premios para apagar el live">
+            <article class="prize-card hot">
+                <div class="gift-icon galaxy" aria-hidden="true">G</div>
+                <div class="gift-copy">
+                    <div class="gift-name">Galaxia</div>
+                    <div class="gift-action negative">Apago live</div>
+                </div>
+            </article>
+
+            <article class="prize-card">
+                <div class="gift-icon money" aria-hidden="true">$</div>
+                <div class="gift-copy">
+                    <div class="gift-name">Pistola de dinero / Rosadita</div>
+                    <div class="gift-action negative">-15</div>
+                </div>
+            </article>
+        </section>
+
+        <section class="prize-column right-side" aria-label="Premios para sumar wins">
+            <article class="prize-card">
+                <div class="gift-cost">500</div>
+                <div class="gift-icon gold" aria-hidden="true">W</div>
+                <div class="gift-copy">
+                    <div class="gift-name">Premio 500</div>
+                    <div class="gift-action positive">+15 wins</div>
+                </div>
+            </article>
+
+            <article class="prize-card hot">
+                <div class="gift-cost">1000</div>
+                <div class="gift-icon red" aria-hidden="true">!</div>
+                <div class="gift-copy">
+                    <div class="gift-name">Premio 1000</div>
+                    <div class="gift-action">No apagar live</div>
+                </div>
+            </article>
+        </section>
+    </main>
+</body>
+</html>
