@@ -242,7 +242,8 @@
             if (state.isConnected) {
                 statusEl.textContent = "CONECTADO: " + state.tiktokUser;
                 statusEl.style.background = "#4caf50";
-            } else {
+            } else if (statusEl.textContent === "DESCONECTADO") {
+                // No ocultar el detalle de un fallo o una conexión en curso.
                 statusEl.textContent = "DESCONECTADO";
                 statusEl.style.background = "#cc0000";
             }
