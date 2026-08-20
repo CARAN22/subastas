@@ -18,6 +18,10 @@ const USERS = {
 const sessions = new Map();
 let activeContext = null;
 
+app.get('/healthz', (req, res) => {
+    res.status(200).send('ok');
+});
+
 function parseCookies(header = '') {
     return Object.fromEntries(header.split(';').map((part) => part.trim().split('=')));
 }
