@@ -1,9 +1,19 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const { WebcastPushConnection } = require('tiktok-live-connector');
 const path = require('path');
 const crypto = require('crypto');
+
+let legacyTikTokConnector;
+
+function loadTikTokConnector() {
+    if (!legacyTikTokConnector) {
+        // Desde la versión 2.2 el paquete es ESM. La entrada legacy conserva
+        // los eventos que utiliza este proyecto mientras migra la API moderna.
+        legacyTikTokConnector = import('tiktok-live-connector/legacy');
+    }
+    return legacyTikTokConnector;
+}
 
 const app = express();
 const server = http.createServer(app);
@@ -641,7 +651,7 @@ io.on('connection', (socket) => {
         auctionState.extraTimePerCoin = val;
     });
 
-    socket.on('set-tiktok-user', (requestedUsername) => {
+    socket.on('set-tiktok-user', async (requestedUsername) => {
         const username = normalizeTikTokUsername(requestedUsername);
         if (!username) {
             socket.emit('tiktok-error', 'Escribe un usuario de TikTok válido.');
@@ -657,11 +667,17 @@ io.on('connection', (socket) => {
         auctionState.isConnected = false;
         socket.emit('tiktok-connecting', username);
 
+        let WebcastPushConnection;
+        try {
+            ({ WebcastPushConnection } = await loadTikTokConnector());
+        } catch (error) {
+            console.error('No se pudo cargar el conector de TikTok:', error);
+            socket.emit('tiktok-error', 'No se pudo iniciar el conector de TikTok. Revisa el despliegue.');
+            return;
+        }
+
         context.tiktokConnection = new WebcastPushConnection(username, {
-            // En hosts compartidos como Render, resolver la sala antes de
-            // conectar puede activar un captcha de TikTok. El firmador admite
-            // recibir el uniqueId directamente y evita esa consulta inicial.
-            connectWithUniqueId: true,
+            // La versión actual usa sus rutas de resolución y firma vigentes.
             fetchRoomInfoOnConnect: false,
             enableExtendedGiftInfo: false,
             processInitialData: false
