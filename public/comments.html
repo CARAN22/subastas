@@ -240,7 +240,6 @@
         const params = new URLSearchParams(window.location.search);
         const isControl = params.get('control') === '1';
         let voiceEnabled = params.get('voice') === '1' || isControl;
-        let selectedVoice = null;
         let bootstrapped = false;
         const knownIds = new Set();
         const spokenIds = new Set();
@@ -296,36 +295,14 @@
             list.replaceChildren(...visible.map(makeCard));
         }
 
-        function chooseMaleSpanishVoice() {
-            if (!('speechSynthesis' in window)) return;
-            const voices = window.speechSynthesis.getVoices();
-            const voiceLabel = (voice) => `${voice.name} ${voice.voiceURI}`;
-            const isMale = (voice) => /male|hombre|gonzalo|jorge|diego|carlos|juan|pablo|miguel|andres|manuel|emilio|alvaro|javier|raul|ricardo|tomas/i.test(voiceLabel(voice));
-            const isColombianSpanish = (voice) => /^es(-|_)CO$/i.test(voice.lang);
-            const isLatinSpanish = (voice) => /es(-|_)(MX|419|US|AR|CL|PE)/i.test(voice.lang);
-
-            // Gonzalo is the Microsoft Spanish (Colombia) male voice.
-            // Never use an unclassified voice: it may be a female default voice.
-            selectedVoice = voices.find((voice) => isColombianSpanish(voice) && isMale(voice))
-                || voices.find((voice) => isLatinSpanish(voice) && isMale(voice))
-                || voices.find((voice) => /^es(-|_)/i.test(voice.lang) && isMale(voice))
-                || null;
-        }
-
         function speak(comment) {
             if (!voiceEnabled || !comment || spokenIds.has(comment.id) || !('speechSynthesis' in window)) return;
             spokenIds.add(comment.id);
             const name = comment.name || comment.uniqueId || 'Usuario';
             const utterance = new SpeechSynthesisUtterance(`${name} dice: ${comment.text}`);
-            utterance.lang = 'es-CO';
-            utterance.rate = 0.9;
-            utterance.pitch = 0.55;
-            if (!selectedVoice) chooseMaleSpanishVoice();
-            if (selectedVoice) {
-                utterance.voice = selectedVoice;
-            } else {
-                console.warn('No Spanish male voice is installed. Install Gonzalo (es-CO) to use a Colombian male voice.');
-            }
+            utterance.lang = 'es-ES';
+            utterance.rate = 1;
+            utterance.pitch = 1;
             window.speechSynthesis.speak(utterance);
         }
 
@@ -366,11 +343,6 @@
 
         function updateVoiceButton() {
             if (voiceBtn) voiceBtn.textContent = voiceEnabled ? 'Voz on' : 'Voz off';
-        }
-
-        if ('speechSynthesis' in window) {
-            chooseMaleSpanishVoice();
-            window.speechSynthesis.addEventListener('voiceschanged', chooseMaleSpanishVoice);
         }
 
         document.getElementById('send-test-btn')?.addEventListener('click', async () => {

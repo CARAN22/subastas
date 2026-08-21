@@ -1,142 +1,14 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const { WebcastPushConnection } = require('tiktok-live-connector');
 const path = require('path');
-const crypto = require('crypto');
-
-let legacyTikTokConnector;
-
-function loadTikTokConnector() {
-    if (!legacyTikTokConnector) {
-        // Desde la versión 2.2 el paquete es ESM. La entrada legacy conserva
-        // los eventos que utiliza este proyecto mientras migra la API moderna.
-        legacyTikTokConnector = import('tiktok-live-connector/legacy');
-    }
-    return legacyTikTokConnector;
-}
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
-
-const USERS = {
-    CARAN_22: 'LiveCaran22!2026',
-    estebanquito2026: 'EstebanLive26!2026'
-};
-const sessions = new Map();
-let activeContext = null;
-let activeOverlayUser = null;
-
-app.get('/healthz', (req, res) => {
-    res.status(200).send('ok');
-});
-
-function parseCookies(header = '') {
-    return Object.fromEntries(header.split(';').map((part) => part.trim().split('=')));
-}
-
-function getUserFromRequest(req) {
-    const sessionId = parseCookies(req.headers.cookie).subastini_session;
-    return sessionId ? sessions.get(sessionId) : null;
-}
-
-function knownUser(value) {
-    const username = String(value ?? '').trim();
-    return Object.hasOwn(USERS, username) ? username : null;
-}
-
-function normalizeTikTokUsername(value) {
-    const input = String(value ?? '').trim();
-    if (!input) return '';
-
-    try {
-        const url = new URL(input);
-        const match = url.pathname.match(/\/@([^/?#]+)/);
-        if (match) return decodeURIComponent(match[1]).trim();
-    } catch {
-        // No es una URL: se trata como nombre de usuario.
-    }
-
-    return input.replace(/^@/, '').split(/[/?#]/, 1)[0].trim();
-}
-
-function describeTikTokError(error) {
-    const message = String(error?.exception?.message || error?.message || error?.info || error || 'Error desconocido');
-    const normalized = message.toLowerCase();
-
-    if (normalized.includes('rate limit') || normalized.includes('rate limited') || normalized.includes('too many requests')) {
-        return 'TikTok limitó temporalmente las conexiones. Espera unos minutos antes de reintentar.';
-    }
-
-    if (normalized.includes('user_not_found') || normalized.includes('room not found') || normalized.includes('not live')) {
-        return 'No se encontró un LIVE activo para este usuario. Inicia la transmisión y verifica el nombre.';
-    }
-
-    return `TikTok no pudo conectar: ${message}`;
-}
-
-function overlayUserFromReferer(referer) {
-    try {
-        return knownUser(new URL(referer).searchParams.get('overlayUser'));
-    } catch {
-        return null;
-    }
-}
-
-function getOverlayUser(req) {
-    return knownUser(req.query?.overlayUser)
-        || overlayUserFromReferer(req.headers?.referer)
-        || activeOverlayUser;
-}
-
-// Los overlays se cargan desde TikTok Live Studio/OBS, que no comparte la
-// cookie de sesión del navegador donde se administra el panel.
-const PUBLIC_OVERLAY_PAGES = new Set([
-    '/overlay.html',
-    '/auction.html',
-    '/likes.html',
-    '/donors.html',
-    '/prizes.html',
-    '/battle-overlay.html'
-]);
-const PUBLIC_OVERLAY_READ_ENDPOINTS = new Set([
-    '/api/wins',
-    '/api/comments',
-    '/api/battle'
-]);
-
-function isPublicOverlayRequest(req) {
-    if (PUBLIC_OVERLAY_PAGES.has(req.path)) return true;
-
-    // Los controles de wins también se usan como fuente de navegador en
-    // TikTok Live Studio, que no comparte la cookie del panel.
-    if (req.path === '/wins.html') return true;
-    if (req.path === '/comments.html') return req.query.control !== '1';
-
-    // La página de batalla normal es un panel; las vistas limpias son overlays.
-    if (req.path === '/battle.html') {
-        return (req.query.clean === '1' || req.query.obs === '1') && req.query.control !== '1';
-    }
-
-    // El panel de wins de Live Studio necesita guardar sus cambios sin cookie.
-    if (req.path === '/api/wins' && req.query.control === '1') return true;
-
-    if (req.method !== 'GET') return false;
-
-    return req.path === '/page-menu.js'
-        || req.path.startsWith('/gift-images/')
-        || PUBLIC_OVERLAY_READ_ENDPOINTS.has(req.path);
-}
-
-function requireAuth(req, res, next) {
-    if (req.path === '/login.html' || req.path === '/api/login' || req.path === '/api/logout' || isPublicOverlayRequest(req) || getUserFromRequest(req)) {
-        return next();
-    }
-    if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'No autenticado' });
-    return res.redirect('/login.html');
-}
 
 function giftImage(fileName) {
     return `/gift-images/${encodeURIComponent(fileName)}`;
@@ -162,28 +34,6 @@ const BATTLE_GIFTS = {
 };
 
 app.use(express.json());
-app.use(requireAuth);
-
-app.post('/api/login', (req, res) => {
-    const username = String(req.body?.username || '').trim();
-    const password = String(req.body?.password || '');
-    if (!USERS[username] || USERS[username] !== password) {
-        return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
-    }
-
-    const sessionId = crypto.randomBytes(24).toString('hex');
-    sessions.set(sessionId, username);
-    activeOverlayUser = username;
-    res.set('Set-Cookie', `subastini_session=${sessionId}; HttpOnly; Path=/; SameSite=Lax`);
-    res.json({ username });
-});
-
-app.post('/api/logout', (req, res) => {
-    const sessionId = parseCookies(req.headers.cookie).subastini_session;
-    if (sessionId) sessions.delete(sessionId);
-    res.set('Set-Cookie', 'subastini_session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax');
-    res.json({ ok: true });
-});
 app.use((req, res, next) => {
     if (req.path === '/wins.html' || req.path === '/comments.html' || req.path === '/battle.html' || req.path === '/battle-overlay.html' || req.path.startsWith('/api/wins') || req.path.startsWith('/api/comments') || req.path.startsWith('/api/battle')) {
         res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
@@ -195,8 +45,10 @@ app.use((req, res, next) => {
 app.use('/gift-images', express.static(path.join(__dirname, 'REGALOS DE TIK TOK PNG By Adbra')));
 app.use(express.static('public'));
 
-// Estado aislado por cuenta para sincronizar Panel y Overlay.
-const defaultAuctionState = {
+let tiktokConnection = null;
+
+// Estado global de la subasta para sincronizar Panel y Overlay
+let auctionState = {
     participants: [],
     timeLeft: 0,
     initTimeConfig: 60,
@@ -235,52 +87,6 @@ const defaultAuctionState = {
     },
     extraTimePerCoin: 0 // Cambiado a 0 según pedido (usaremos delay fijo)
 };
-
-const userStates = new Map();
-function createUserState() {
-    return structuredClone(defaultAuctionState);
-}
-function stateFor(user) {
-    if (!userStates.has(user)) userStates.set(user, createUserState());
-    return userStates.get(user);
-}
-const auctionState = new Proxy({}, {
-    get: (_, property) => activeContext?.state[property],
-    set: (_, property, value) => {
-        activeContext.state[property] = value;
-        return true;
-    },
-    ownKeys: () => activeContext ? Reflect.ownKeys(activeContext.state) : [],
-    getOwnPropertyDescriptor: (_, property) => ({
-        enumerable: true,
-        configurable: true,
-        value: activeContext?.state[property]
-    })
-});
-function inContext(context, callback) {
-    const previous = activeContext;
-    activeContext = context;
-    try { return callback(); } finally { activeContext = previous; }
-}
-
-function requestContext(req) {
-    const user = getUserFromRequest(req)
-        || (isPublicOverlayRequest(req) ? getOverlayUser(req) : null);
-
-    return user ? { user, room: `user:${user}`, state: stateFor(user) } : null;
-}
-
-function inRequestContext(req, res, callback) {
-    const context = requestContext(req);
-    if (!context) {
-        return res.status(503).json({ error: 'No hay un panel activo para este overlay' });
-    }
-    return inContext(context, callback);
-}
-
-function emitToContext(event, payload) {
-    if (activeContext) io.to(activeContext.room).emit(event, payload);
-}
 
 function numberOr(value, fallback) {
     const parsed = parseInt(value, 10);
@@ -527,40 +333,34 @@ function applyBattleGift(data, repeatCount, forcedSide, unitCoinsOverride) {
     }
 
     const payload = getBattleState();
-    emitToContext('battle-state-update', payload);
+    io.emit('battle-state-update', payload);
     return payload;
 }
 
 app.get('/api/wins', (req, res) => {
-    return inRequestContext(req, res, () => res.json(auctionState.wins));
+    res.json(auctionState.wins);
 });
 
 app.post('/api/wins', (req, res) => {
-    return inRequestContext(req, res, () => {
-        const wins = setWinsState(req.body || {});
-        emitToContext('wins-update', wins);
-        res.json(wins);
-    });
+    const wins = setWinsState(req.body || {});
+    io.emit('wins-update', wins);
+    res.json(wins);
 });
 
 app.get('/api/battle', (req, res) => {
-    return inRequestContext(req, res, () => res.json(getBattleState()));
+    res.json(getBattleState());
 });
 
 app.post('/api/battle/config', (req, res) => {
-    return inRequestContext(req, res, () => {
-        const battle = setBattleConfig(req.body || {});
-        emitToContext('battle-state-update', battle);
-        res.json(battle);
-    });
+    const battle = setBattleConfig(req.body || {});
+    io.emit('battle-state-update', battle);
+    res.json(battle);
 });
 
 app.post('/api/battle/reset', (req, res) => {
-    return inRequestContext(req, res, () => {
-        const battle = resetBattleState();
-        emitToContext('battle-state-update', battle);
-        res.json(battle);
-    });
+    const battle = resetBattleState();
+    io.emit('battle-state-update', battle);
+    res.json(battle);
 });
 
 function pushComment(comment) {
@@ -577,7 +377,7 @@ function pushComment(comment) {
     };
 
     auctionState.comments = [entry, ...(auctionState.comments || [])].slice(0, 25);
-    emitToContext('comments-update', {
+    io.emit('comments-update', {
         comments: auctionState.comments,
         newComment: entry
     });
@@ -585,127 +385,58 @@ function pushComment(comment) {
 }
 
 app.get('/api/comments', (req, res) => {
-    return inRequestContext(req, res, () => res.json({ comments: auctionState.comments || [] }));
+    res.json({ comments: auctionState.comments || [] });
 });
 
 app.post('/api/comments/test', (req, res) => {
-    return inRequestContext(req, res, () => {
-        const entry = pushComment(req.body || {});
-        res.json({ comments: auctionState.comments || [], newComment: entry });
-    });
+    const entry = pushComment(req.body || {});
+    res.json({ comments: auctionState.comments || [], newComment: entry });
 });
 
 app.post('/api/comments/clear', (req, res) => {
-    return inRequestContext(req, res, () => {
-        auctionState.comments = [];
-        emitToContext('comments-clear');
-        emitToContext('comments-update', { comments: auctionState.comments });
-        res.json({ comments: auctionState.comments });
-    });
-});
-
-io.use((socket, next) => {
-    const user = getUserFromRequest({ headers: { cookie: socket.handshake.headers.cookie || '' } });
-    if (user) {
-        socket.request.user = user;
-        socket.data.readOnlyOverlay = false;
-        return next();
-    }
-
-    const overlayUser = getOverlayUser({
-        query: socket.handshake.auth || {},
-        headers: { referer: socket.handshake.headers.referer || '' }
-    });
-    if (!overlayUser) return next(new Error('No hay un panel activo para este overlay'));
-
-    socket.request.user = overlayUser;
-    socket.data.readOnlyOverlay = true;
-    socket.data.allowWinsControl = socket.handshake.auth?.winsControl === true;
-    next();
+    auctionState.comments = [];
+    io.emit('comments-clear');
+    io.emit('comments-update', { comments: auctionState.comments });
+    res.json({ comments: auctionState.comments });
 });
 
 io.on('connection', (socket) => {
     console.log('Cliente conectado');
-    const user = socket.request.user;
-    const context = { user, room: `user:${user}`, state: stateFor(user) };
-    socket.join(context.room);
-
-    if (socket.data.readOnlyOverlay) {
-        socket.use((event, next) => {
-            if (socket.data.allowWinsControl && event[0] === 'admin-update-wins') return next();
-            next(new Error('El overlay es de solo lectura'));
-        });
-    }
-
-    const originalOn = socket.on.bind(socket);
-    socket.on = (event, listener) => originalOn(event, (...args) => inContext(context, () => listener(...args)));
     
-    inContext(context, () => socket.emit('sync-state', auctionState));
+    socket.emit('sync-state', auctionState);
 
     socket.on('set-mode', (mode) => {
         auctionState.mode = mode;
-        emitToContext('mode-changed', mode);
+        io.emit('mode-changed', mode);
     });
 
     socket.on('set-extra-time', (val) => {
         auctionState.extraTimePerCoin = val;
     });
 
-    socket.on('set-tiktok-user', async (requestedUsername) => {
-        const username = normalizeTikTokUsername(requestedUsername);
-        if (!username) {
-            socket.emit('tiktok-error', 'Escribe un usuario de TikTok válido.');
-            return;
+    socket.on('set-tiktok-user', (username) => {
+        if (tiktokConnection) {
+            tiktokConnection.disconnect();
         }
 
-        activeOverlayUser = context.user;
-        if (context.tiktokConnection) {
-            context.tiktokConnection.disconnect();
-        }
-
-        auctionState.tiktokUser = username;
-        auctionState.isConnected = false;
-        socket.emit('tiktok-connecting', username);
-
-        let WebcastPushConnection;
-        try {
-            ({ WebcastPushConnection } = await loadTikTokConnector());
-        } catch (error) {
-            console.error('No se pudo cargar el conector de TikTok:', error);
-            socket.emit('tiktok-error', 'No se pudo iniciar el conector de TikTok. Revisa el despliegue.');
-            return;
-        }
-
-        context.tiktokConnection = new WebcastPushConnection(username, {
-            // La versión actual usa sus rutas de resolución y firma vigentes.
-            fetchRoomInfoOnConnect: false,
-            enableExtendedGiftInfo: false,
-            processInitialData: false
+        tiktokConnection = new WebcastPushConnection(username, {
+            enableExtendedGiftInfo: true
         });
 
-        context.tiktokConnection.on('error', (error) => inContext(context, () => {
-            console.error('Error TikTok durante el LIVE:', error);
-            auctionState.isConnected = false;
-            socket.emit('tiktok-error', describeTikTokError(error));
-            emitToContext('sync-state', auctionState);
-        }));
-
-        context.tiktokConnection.connect().then(state => {
+        tiktokConnection.connect().then(state => {
             console.info(`Conectado al live de ${username}`);
             auctionState.tiktokUser = username;
             auctionState.isConnected = true;
-            emitToContext('tiktok-connected', username);
-            emitToContext('sync-state', auctionState);
+            io.emit('tiktok-connected', username);
+            io.emit('sync-state', auctionState);
         }).catch(err => {
-            inContext(context, () => {
-                console.error('Error TikTok:', err);
-                auctionState.isConnected = false;
-                socket.emit('tiktok-error', describeTikTokError(err));
-                emitToContext('sync-state', auctionState);
-            });
+            console.error('Error TikTok:', err);
+            auctionState.isConnected = false;
+            socket.emit('tiktok-error', err.toString());
+            io.emit('sync-state', auctionState);
         });
 
-        context.tiktokConnection.on('gift', (data) => inContext(context, () => {
+        tiktokConnection.on('gift', (data) => {
             if (!(data.giftType === 1 && !data.repeatEnd)) {
                 const repeatCount = parseInt(data.repeatCount, 10) || 1;
                 const unitCoins = realGiftCoins(data);
@@ -725,7 +456,7 @@ io.on('connection', (socket) => {
                 auctionState.classicParticipants[donorId].photo = data.profilePictureUrl;
                 auctionState.classicParticipants[donorId].coins += totalCoins;
 
-                emitToContext('classic-update', {
+                io.emit('classic-update', {
                     participants: auctionState.classicParticipants,
                     newDonationId: donorId
                 });
@@ -740,7 +471,7 @@ io.on('connection', (socket) => {
 
                     if (entries > 0) {
                         for (let i = 0; i < entries; i++) {
-                            emitToContext('add-participant-broadcast', {
+                            io.emit('add-participant-broadcast', {
                                 id: `gift_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                                 name: data.nickname,
                                 photo: data.profilePictureUrl,
@@ -759,15 +490,15 @@ io.on('connection', (socket) => {
                     }
                     auctionState.classicParticipants[data.uniqueId].coins += totalCoins;
                     
-                    emitToContext('classic-update', {
+                    io.emit('classic-update', {
                         participants: auctionState.classicParticipants,
                         newDonationId: data.uniqueId // Para efecto de agrandar/limpieza
                     });
                 }
             }
-        }));
+        });
 
-        context.tiktokConnection.on('like', (data) => inContext(context, () => {
+        tiktokConnection.on('like', (data) => {
             const likeCount = parseInt(data.likeCount, 10) || 1;
             if (likeCount <= 0) return;
 
@@ -786,15 +517,15 @@ io.on('connection', (socket) => {
             auctionState.likeParticipants[likerId].likes += likeCount;
             auctionState.totalLikes += likeCount;
 
-            emitToContext('likes-update', {
+            io.emit('likes-update', {
                 participants: auctionState.likeParticipants,
                 totalLikes: auctionState.totalLikes,
                 newLikeId: likerId,
                 newLikeCount: likeCount
             });
-        }));
+        });
 
-        context.tiktokConnection.on('chat', (data) => inContext(context, () => {
+        tiktokConnection.on('chat', (data) => {
             pushComment({
                 id: data.msgId || data.commentId,
                 name: data.nickname || data.uniqueId || 'Usuario',
@@ -802,12 +533,12 @@ io.on('connection', (socket) => {
                 photo: data.profilePictureUrl || '',
                 text: data.comment || data.msg || ''
             });
-        }));
+        });
 
-        context.tiktokConnection.on('disconnected', () => inContext(context, () => {
+        tiktokConnection.on('disconnected', () => {
             auctionState.isConnected = false;
-            emitToContext('tiktok-disconnected');
-        }));
+            io.emit('tiktok-disconnected');
+        });
     });
 
     // Comandos Admin (se mantienen y se añaden nuevos)
@@ -820,7 +551,7 @@ io.on('connection', (socket) => {
         if (auctionState.mode === 'classic') {
             auctionState.classicParticipants = {}; // Reset ranking al empezar
         }
-        emitToContext('start-auction-broadcast', config);
+        io.emit('start-auction-broadcast', config);
     });
 
     socket.on('admin-clear-all', () => {
@@ -829,13 +560,13 @@ io.on('connection', (socket) => {
         auctionState.isAuctionActive = false;
         auctionState.hasWinner = false;
         auctionState.isRouletteRunning = false;
-        emitToContext('clear-all-broadcast');
+        io.emit('clear-all-broadcast');
     });
 
     socket.on('admin-clear-donors', () => {
         auctionState.classicParticipants = {};
-        emitToContext('clear-donors-broadcast');
-        emitToContext('classic-update', {
+        io.emit('clear-donors-broadcast');
+        io.emit('classic-update', {
             participants: auctionState.classicParticipants
         });
     });
@@ -843,8 +574,8 @@ io.on('connection', (socket) => {
     socket.on('admin-clear-likes', () => {
         auctionState.likeParticipants = {};
         auctionState.totalLikes = 0;
-        emitToContext('clear-likes-broadcast');
-        emitToContext('likes-update', {
+        io.emit('clear-likes-broadcast');
+        io.emit('likes-update', {
             participants: auctionState.likeParticipants,
             totalLikes: auctionState.totalLikes
         });
@@ -852,19 +583,19 @@ io.on('connection', (socket) => {
 
     socket.on('admin-change-theme', (color) => {
         auctionState.themeColor = color;
-        emitToContext('change-theme-broadcast', color);
+        io.emit('change-theme-broadcast', color);
     });
 
     socket.on('admin-add-test', (testData) => {
-        emitToContext('add-participant-broadcast', testData);
+        io.emit('add-participant-broadcast', testData);
     });
 
     socket.on('admin-force-time', (newTime) => {
-        emitToContext('force-time-broadcast', newTime);
+        io.emit('force-time-broadcast', newTime);
     });
 
     socket.on('admin-trigger-elimination', () => {
-        emitToContext('trigger-elimination-broadcast');
+        io.emit('trigger-elimination-broadcast');
     });
 
     socket.on('admin-add-classic-test', (data) => {
@@ -876,7 +607,7 @@ io.on('connection', (socket) => {
             };
         }
         auctionState.classicParticipants[data.uniqueId].coins += data.totalCoins;
-        emitToContext('classic-update', {
+        io.emit('classic-update', {
             participants: auctionState.classicParticipants,
             newDonationId: data.uniqueId
         });
@@ -893,7 +624,7 @@ io.on('connection', (socket) => {
         }
         auctionState.likeParticipants[data.uniqueId].likes += likeCount;
         auctionState.totalLikes += likeCount;
-        emitToContext('likes-update', {
+        io.emit('likes-update', {
             participants: auctionState.likeParticipants,
             totalLikes: auctionState.totalLikes,
             newLikeId: data.uniqueId,
@@ -903,27 +634,27 @@ io.on('connection', (socket) => {
 
     socket.on('admin-update-min', (min) => {
         auctionState.minCoins = min;
-        emitToContext('update-min-broadcast', min);
+        io.emit('update-min-broadcast', min);
     });
 
     socket.on('admin-update-wins', (wins) => {
-        emitToContext('wins-update', setWinsState(wins || {}));
+        io.emit('wins-update', setWinsState(wins || {}));
     });
 
     socket.on('admin-update-battle-config', (config) => {
-        emitToContext('battle-state-update', setBattleConfig(config || {}));
+        io.emit('battle-state-update', setBattleConfig(config || {}));
     });
 
     socket.on('admin-reset-battle', () => {
-        emitToContext('battle-state-update', resetBattleState());
+        io.emit('battle-state-update', resetBattleState());
     });
 
     socket.on('admin-battle-start-timer', (seconds) => {
-        emitToContext('battle-state-update', startBattleTimer(seconds));
+        io.emit('battle-state-update', startBattleTimer(seconds));
     });
 
     socket.on('admin-battle-stop-timer', () => {
-        emitToContext('battle-state-update', stopBattleTimer());
+        io.emit('battle-state-update', stopBattleTimer());
     });
 
     socket.on('admin-battle-test-gift', (data) => {
@@ -945,8 +676,8 @@ io.on('connection', (socket) => {
 
     socket.on('admin-clear-comments', () => {
         auctionState.comments = [];
-        emitToContext('comments-clear');
-        emitToContext('comments-update', { comments: auctionState.comments });
+        io.emit('comments-clear');
+        io.emit('comments-update', { comments: auctionState.comments });
     });
 
     socket.on('disconnect', () => {

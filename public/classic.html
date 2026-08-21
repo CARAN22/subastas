@@ -254,48 +254,9 @@
             document.documentElement.style.setProperty('--neon-bg', `rgba(${r}, ${g}, ${b}, 0.15)`);
         });
 
-        let tiktokConnectionTimeout;
-
-        function showTikTokStatus(message, color) {
-            const statusEl = document.getElementById('connection-status');
-            statusEl.textContent = message;
-            statusEl.style.background = color;
-        }
-
         document.getElementById('connect-btn').addEventListener('click', () => {
             const user = document.getElementById('tiktok-username').value.trim();
-            if (!user) return showTikTokStatus('ESCRIBE TU USUARIO DE TIKTOK', '#cc0000');
-
-            clearTimeout(tiktokConnectionTimeout);
-            showTikTokStatus('CONECTANDO: ' + user, '#d97706');
-            socket.emit('set-tiktok-user', user);
-            tiktokConnectionTimeout = setTimeout(() => {
-                showTikTokStatus('SIN RESPUESTA DEL SERVIDOR. RECARGA LA PÁGINA.', '#cc0000');
-            }, 15000);
-        });
-
-        socket.on('tiktok-connecting', (username) => {
-            showTikTokStatus('CONECTANDO: ' + username, '#d97706');
-        });
-
-        socket.on('tiktok-connected', (username) => {
-            clearTimeout(tiktokConnectionTimeout);
-            showTikTokStatus('CONECTADO: ' + username, '#4caf50');
-        });
-
-        socket.on('tiktok-error', (message) => {
-            clearTimeout(tiktokConnectionTimeout);
-            showTikTokStatus(message, '#cc0000');
-        });
-
-        socket.on('tiktok-disconnected', () => {
-            clearTimeout(tiktokConnectionTimeout);
-            showTikTokStatus('DESCONECTADO', '#cc0000');
-        });
-
-        socket.on('connect_error', () => {
-            clearTimeout(tiktokConnectionTimeout);
-            showTikTokStatus('NO SE PUDO CONECTAR AL SERVIDOR', '#cc0000');
+            if (user) socket.emit('set-tiktok-user', user);
         });
 
         document.getElementById('confirm-delay-btn').addEventListener('click', () => {
